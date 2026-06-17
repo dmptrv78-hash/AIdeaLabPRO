@@ -1,0 +1,194 @@
+# ===================== ОБРАБОТЧИКИ СВОБОДНЫХ ТЕКСТОВЫХ ЗАПРОСОВ =====================
+@dp.message(F.text)
+async def handle_free_text(message: types.Message, state: FSMContext):
+    text = message.text.lower()
+    # === Юридическая доработка договоров (ГПХ, СМЗ, ТД) ===
+    if any(w in text for w in ["гпх", "смз", "тд", "отчуждение прав", "рид", "реестр по"]):
+        await state.set_state(LegalDocStates.contract_types)
+        await message.answer(
+            "Вы обратились за юридической доработкой договоров. Уточните:\n"
+            "Какие договоры нужно доработать? (ГПХ, СМЗ, ТД, все три)",
+            reply_markup=nav_keyboard()
+        )
+        return
+    # === Дополнительное соглашение ===
+    if any(w in text for w in ["доп соглашение", "доп. соглашение", "дополнительное соглашение"]):
+        await state.set_state(ExtraAgreementStates.contract_info)
+        await message.answer(
+            "Дополнительное соглашение. Укажите номер и дату договора (можно пропустить).",
+            reply_markup=nav_keyboard()
+        )
+        return
+    # === Грант Агростартап ===
+    if any(w in text for w in ["грант", "агростартап", "минсельхоз"]):
+        await state.set_state(GrantStates.direction)
+        await message.answer(
+            "Грант Агростартап. Укажите направление (животноводство, растениеводство и т.д.)",
+            reply_markup=nav_keyboard()
+        )
+        return
+    # === Строительство (стратегия) ===
+    if any(w in text for w in ["строительство", "монолитное", "сро", "подрядчик", "охрана труда"]):
+        await state.set_state(StrategyStates.has_company)
+        await message.answer(
+            "Стратегия для строительного бизнеса. У вас уже есть ООО или ИП? (да/нет)",
+            reply_markup=nav_keyboard()
+        )
+        return
+    # === Бизнес-план (конный спорт или любой другой) ===
+    if any(w in text for w in ["бизнес план", "окупаемость", "доходы расходы", "инвестиции", "конно-спортивный"]):
+        await state.set_state(BPSportsStates.infrastructure)
+        await message.answer(
+            "Бизнес-план. У вас есть земля и инфраструктура? (да/нет)",
+            reply_markup=nav_keyboard()
+        )
+        return
+    # === Если ничего не распознано ===
+    await message.answer("Выберите услугу в меню или опишите задачу подробнее.", reply_markup=main_menu_keyboard())
+
+# ===================== ДОПОЛНИТЕЛЬНОЕ СОГЛАШЕНИЕ =====================
+@dp.message(ExtraAgreementStates.contract_info)
+async def extra_contract(message: types.Message, state: FSMContext):
+    await state.update_data(contract_info=message.text if message.text.lower() != "пропустить" else "не указано")
+    await state.set_state(ExtraAgreementStates.changes)
+    await message.answer("Что именно меняется? (цена, срок, условия)", reply_markup=nav_keyboard())
+
+@dp.message(ExtraAgreementStates.changes)
+async def extra_changes(message: types.Message, state: FSMContext):
+    await state.update_data(changes=message.text)
+    await state.set_state(ExtraAgreementStates.template)
+    await message.answer("У вас есть свой шаблон? (да/нет, если нет — предложим наш)", reply_markup=nav_keyboard())
+
+@dp.message(ExtraAgreementStates.template)
+async def extra_template(message: types.Message, state: FSMContext):
+    await state.update_data(template=message.text)
+    data = await state.get_data()
+    price = 300
+    if "срочно" in str(data).lower() or "сегодня" in str(data).lower():
+        price = 450
+    await finalize_order(message, state, "Дополнительное соглашение", {
+        "Договор": data.get("contract_info", "—"),
+        "Изменения": data.get("changes", "—"),
+        "Шаблон": data.get("template", "—")
+    }, price_override=price)
+
+# ===================== ГРАНТ АГРОСТАРТАП =====================
+@dp.message(GrantStates.direction)
+async def grant_direction(message: types.Message, state: FSMContext):
+    await state.update_data(direction=message.text)
+    await state.set_state(GrantStates.has_bp)
+    await message.answer("У вас уже есть бизнес-план или нужно разработать с нуля?", reply_markup=nav_keyboard())
+
+@dp.message(GrantStates.has_bp)
+async def grant_has_bp(message: types.Message, state: FSMContext):
+    await state.update_data(has_bp=message.text)
+    await state.set_state(GrantStates.documents)
+    await message.answer("Есть ли пакет документов для подачи? (регистрация, выписки)", reply_markup=nav_keyboard())
+
+@dp.message(GrantStates.documents)
+async def grant_documents(message: types.Message, state: FSMContext):
+    await state.update_data(documents=message.text)
+    data = await state.get_data()
+    await finalize_order(message, state, "Грант Агростартап", {
+        "Направление": data.get("direction", "—"),
+        "Бизнес-план": data.get("has_bp", "—"),
+        "Документы": data.get("documents", "—")
+    }, price_override=6500)
+
+# ===================== СТРАТЕГИЯ СТРОИТЕЛЬСТВА =====================
+@dp.message(StrategyStates.has_company)
+async def strategy_company(message: types.Message, state: FSMContext):
+    await state.update_data(has_company=message.text)
+    await state.set_state(StrategyStates.has_subcontractors)
+    await message.answer("Работаете с субподрядчиками? (да/нет)", reply_markup=nav_keyboard())
+
+@dp.message(StrategyStates.has_subcontractors)
+async def strategy_subcontractors(message: types.Message, state: FSMContext):
+    await state.update_data(has_subcontractors=message.text)
+    await state.set_state(StrategyStates.urgent_tasks)
+    await message.answer("Есть срочные вопросы по СРО, налогам, охране труда?", reply_markup=nav_keyboard())
+
+@dp.message(StrategyStates.urgent_tasks)
+async def strategy_urgent(message: types.Message, state: FSMContext):
+    await state.update_data(urgent_tasks=message.text)
+    await state.set_state(StrategyStates.need_sales)
+    await message.answer("Нужна система продаж и мотивации? (да/нет)", reply_markup=nav_keyboard())
+
+@dp.message(StrategyStates.need_sales)
+async def strategy_sales(message: types.Message, state: FSMContext):
+    await state.update_data(need_sales=message.text)
+    data = await state.get_data()
+    await finalize_order(message, state, "Стратегия строительства", {
+        "Компания": data.get("has_company", "—"),
+        "Субподрядчики": data.get("has_subcontractors", "—"),
+        "Срочные задачи": data.get("urgent_tasks", "—"),
+        "Система продаж": data.get("need_sales", "—")
+    }, price_override=6800)
+
+# ===================== БИЗНЕС-ПЛАН (КОННЫЙ СПОРТ) =====================
+@dp.message(BPSportsStates.infrastructure)
+async def bp_infrastructure(message: types.Message, state: FSMContext):
+    await state.update_data(infrastructure=message.text)
+    await state.set_state(BPSportsStates.scale)
+    await message.answer("Какой масштаб мероприятий? (локальные, региональные, международные)", reply_markup=nav_keyboard())
+
+@dp.message(BPSportsStates.scale)
+async def bp_scale(message: types.Message, state: FSMContext):
+    await state.update_data(scale=message.text)
+    await state.set_state(BPSportsStates.data_available)
+    await message.answer("Есть ли данные по доходам (взносы, билеты) или всё нужно прогнозировать?", reply_markup=nav_keyboard())
+
+@dp.message(BPSportsStates.data_available)
+async def bp_data(message: types.Message, state: FSMContext):
+    await state.update_data(data_available=message.text)
+    data = await state.get_data()
+    await finalize_order(message, state, "Бизнес-план конный спорт", {
+        "Инфраструктура": data.get("infrastructure", "—"),
+        "Масштаб": data.get("scale", "—"),
+        "Данные": data.get("data_available", "—")
+    }, price_override=6500)
+
+# ===================== ЮРИДИЧЕСКАЯ ДОРАБОТКА ДОГОВОРОВ =====================
+@dp.message(LegalDocStates.contract_types)
+async def legal_contract_types(message: types.Message, state: FSMContext):
+    await state.update_data(contract_types=message.text)
+    await state.set_state(LegalDocStates.has_projects)
+    await message.answer("У вас есть готовые проекты договоров? (да/нет)", reply_markup=nav_keyboard())
+
+@dp.message(LegalDocStates.has_projects)
+async def legal_has_projects(message: types.Message, state: FSMContext):
+    await state.update_data(has_projects=message.text)
+    await state.set_state(LegalDocStates.deadline)
+    await message.answer("Какой срок выполнения?", reply_markup=nav_keyboard())
+
+@dp.message(LegalDocStates.deadline)
+async def legal_deadline(message: types.Message, state: FSMContext):
+    await state.update_data(deadline=message.text)
+    await state.set_state(LegalDocStates.registry)
+    await message.answer("Требуется адаптация под Реестр ПО? (да/нет)", reply_markup=nav_keyboard())
+
+@dp.message(LegalDocStates.registry)
+async def legal_registry(message: types.Message, state: FSMContext):
+    await state.update_data(registry=message.text)
+    await state.set_state(LegalDocStates.requirements)
+    await message.answer("Есть особые требования к актам передачи РИД?", reply_markup=nav_keyboard())
+
+@dp.message(LegalDocStates.requirements)
+async def legal_requirements(message: types.Message, state: FSMContext):
+    await state.update_data(requirements=message.text)
+    data = await state.get_data()
+    await finalize_order(message, state, "Юридическая доработка договоров", {
+        "Типы договоров": data.get("contract_types", "—"),
+        "Готовые проекты": data.get("has_projects", "—"),
+        "Срок": data.get("deadline", "—"),
+        "Реестр ПО": data.get("registry", "—"),
+        "Требования": data.get("requirements", "—")
+    }, price_override=6500)
+
+# ===================== ЗАПУСК БОТА =====================
+async def main():
+    await init_db()
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())

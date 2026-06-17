@@ -1,0 +1,341 @@
+import asyncio
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+
+BOT_TOKEN = "8802501314:AAG0L8mrwSTNUqhrsHWIWGarw8QlZgtJXGQ"  # замените на реальный
+
+storage = MemoryStorage()
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher(storage=storage)
+
+# ---------- КЛАВИАТУРЫ ----------
+def main_menu_keyboard():
+    kb = [
+        [KeyboardButton(text="📋 Техническое задание")],
+        [KeyboardButton(text="📊 ТЭО")],
+        [KeyboardButton(text="💰 Финансовая модель")],
+        [KeyboardButton(text="📈 Бизнес-план")],
+        [KeyboardButton(text="📦 Полный пакет")],
+        [KeyboardButton(text="🔍 Проверка документов")],
+        [KeyboardButton(text="✏️ Доработка документов")],
+        [KeyboardButton(text="💬 Консультация")],
+        [KeyboardButton(text="📋 Мои заявки")],
+        [KeyboardButton(text="❓ Помощь")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+# Клавиатура навигации (внутри сценария)
+def nav_keyboard():
+    kb = [
+        [KeyboardButton(text="🔙 Назад"), KeyboardButton(text="🏠 Главное меню")],
+        [KeyboardButton(text="⏭ Пропустить")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+# ---------- СОСТОЯНИЯ ДЛЯ ТЗ ----------
+class TZStates(StatesGroup):
+    name = State()
+    essence = State()
+    audience = State()
+    features = State()
+    competitors = State()
+    tech_limits = State()
+    deadline = State()
+    budget = State()
+    files = State()
+
+# ---------- СОСТОЯНИЯ ДЛЯ ТЭО ----------
+class TEOStates(StatesGroup):
+    goal = State()
+    resources = State()
+    risks = State()
+    norms = State()
+    effect = State()
+    data = State()
+    horizon = State()
+    files = State()
+
+# ---------- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ОТОБРАЖЕНИЯ СВОДКИ ----------
+async def show_summary(message: types.Message, state: FSMContext, service_name: str, fields: dict):
+    data = await state.get_data()
+    summary = f"📋 {service_name}\n\n"
+    for key, label in fields.items():
+        summary += f"{label}: {data.get(key, '—')}\n"
+    await message.answer(
+        f"{summary}\n\n✅ Заявка создана! Передаём специалисту.",
+        reply_markup=main_menu_keyboard()
+    )
+    await state.clear()
+
+# ---------- ОБРАБОТЧИК /start ----------
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer(
+        "Добро пожаловать в AIdea Lab PRO! Выберите услугу:",
+        reply_markup=main_menu_keyboard()
+    )
+
+# ---------- ОБРАБОТЧИК НАВИГАЦИИ (Главное меню, Назад) ----------
+@dp.message(lambda msg: msg.text == "🏠 Главное меню")
+async def go_home(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Вы вернулись в главное меню.", reply_markup=main_menu_keyboard())
+
+@dp.message(lambda msg: msg.text == "🔙 Назад")
+async def go_back(message: types.Message, state: FSMContext):
+    # Получаем текущее состояние
+    current_state = await state.get_state()
+    if not current_state:
+        await message.answer("Вы не в процессе заполнения.", reply_markup=main_menu_keyboard())
+        return
+    
+    # Определяем, к какой группе состояний относится текущее
+    if current_state.startswith("TZStates:"):
+        # Возвращаемся на предыдущий шаг ТЗ
+        step = current_state.split(":")[1]
+        prev_steps = {
+            "essence": "name",
+            "audience": "essence",
+            "features": "audience",
+            "competitors": "features",
+            "tech_limits": "competitors",
+            "deadline": "tech_limits",
+            "budget": "deadline",
+            "files": "budget"
+        }
+        if step in prev_steps:
+            await state.set_state(getattr(TZStates, prev_steps[step]))
+            # Отправляем сообщение с предыдущим вопросом (можно вынести в отдельную функцию)
+            await message.answer("Возврат на предыдущий шаг. Пожалуйста, введите данные заново.", reply_markup=nav_keyboard())
+        else:
+            await message.answer("Это первый шаг, назад нельзя.", reply_markup=nav_keyboard())
+    elif current_state.startswith("TEOStates:"):
+        # Аналогично для ТЭО
+        step = current_state.split(":")[1]
+        prev_steps_teo = {
+            "resources": "goal",
+            "risks": "resources",
+            "norms": "risks",
+            "effect": "norms",
+            "data": "effect",
+            "horizon": "data",
+            "files": "horizon"
+        }
+        if step in prev_steps_teo:
+            await state.set_state(getattr(TEOStates, prev_steps_teo[step]))
+            await message.answer("Возврат на предыдущий шаг.", reply_markup=nav_keyboard())
+        else:
+            await message.answer("Это первый шаг, назад нельзя.", reply_markup=nav_keyboard())
+    else:
+        await message.answer("Неизвестное состояние.", reply_markup=main_menu_keyboard())
+
+# ==================== СЦЕНАРИЙ ТЗ ====================
+@dp.message(lambda msg: msg.text == "📋 Техническое задание")
+async def start_tz(message: types.Message, state: FSMContext):
+    await state.set_state(TZStates.name)
+    await message.answer(
+        "Начнём с названия. Как назовём ваш проект?",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(TZStates.name)
+async def process_tz_name(message: types.Message, state: FSMContext):
+    if not message.text or len(message.text.strip()) == 0:
+        await message.answer("Пожалуйста, введите название.")
+        return
+    await state.update_data(name=message.text)
+    await state.set_state(TZStates.essence)
+    await message.answer("Коротко: в чём суть проекта?", reply_markup=nav_keyboard())
+
+@dp.message(TZStates.essence)
+async def process_tz_essence(message: types.Message, state: FSMContext):
+    if not message.text or len(message.text.strip()) == 0:
+        await message.answer("Опишите суть проекта.")
+        return
+    await state.update_data(essence=message.text)
+    await state.set_state(TZStates.audience)
+    await message.answer("Кто ваша ЦА? (можно пропустить)", reply_markup=nav_keyboard())
+
+@dp.message(TZStates.audience)
+async def process_tz_audience(message: types.Message, state: FSMContext):
+    if message.text.lower() == "пропустить":
+        await state.update_data(audience="")
+    else:
+        await state.update_data(audience=message.text)
+    await state.set_state(TZStates.features)
+    await message.answer("Перечислите ключевые функции через запятую.", reply_markup=nav_keyboard())
+
+@dp.message(TZStates.features)
+async def process_tz_features(message: types.Message, state: FSMContext):
+    if not message.text or len(message.text.strip()) == 0:
+        await message.answer("Пожалуйста, перечислите функции.")
+        return
+    await state.update_data(features=message.text)
+    await state.set_state(TZStates.competitors)
+    await message.answer("Конкуренты? (пропустить)", reply_markup=nav_keyboard())
+
+@dp.message(TZStates.competitors)
+async def process_tz_competitors(message: types.Message, state: FSMContext):
+    if message.text.lower() == "пропустить":
+        await state.update_data(competitors="")
+    else:
+        await state.update_data(competitors=message.text)
+    await state.set_state(TZStates.tech_limits)
+    await message.answer("Технические ограничения? (пропустить)", reply_markup=nav_keyboard())
+
+@dp.message(TZStates.tech_limits)
+async def process_tz_tech_limits(message: types.Message, state: FSMContext):
+    if message.text.lower() == "пропустить":
+        await state.update_data(tech_limits="")
+    else:
+        await state.update_data(tech_limits=message.text)
+    await state.set_state(TZStates.deadline)
+    await message.answer("Сроки? (пропустить)", reply_markup=nav_keyboard())
+
+@dp.message(TZStates.deadline)
+async def process_tz_deadline(message: types.Message, state: FSMContext):
+    if message.text.lower() == "пропустить":
+        await state.update_data(deadline="")
+    else:
+        await state.update_data(deadline=message.text)
+    await state.set_state(TZStates.budget)
+    await message.answer("Бюджет? (пропустить)", reply_markup=nav_keyboard())
+
+@dp.message(TZStates.budget)
+async def process_tz_budget(message: types.Message, state: FSMContext):
+    if message.text.lower() == "пропустить":
+        await state.update_data(budget="")
+    else:
+        await state.update_data(budget=message.text)
+    await state.set_state(TZStates.files)
+    await message.answer("Приложите файлы (пока только 'Пропустить')", reply_markup=nav_keyboard())
+
+@dp.message(TZStates.files)
+async def process_tz_files(message: types.Message, state: FSMContext):
+    if message.text.lower() == "пропустить":
+        await state.update_data(files="")
+    else:
+        await state.update_data(files="(файл не загружен)")
+    
+    # Сводка
+    fields = {
+        "name": "Название",
+        "essence": "Суть",
+        "audience": "ЦА",
+        "features": "Функции",
+        "competitors": "Конкуренты",
+        "tech_limits": "Тех. ограничения",
+        "deadline": "Сроки",
+        "budget": "Бюджет",
+        "files": "Файлы"
+    }
+    await show_summary(message, state, "ТЕХНИЧЕСКОЕ ЗАДАНИЕ", fields)
+
+# ==================== СЦЕНАРИЙ ТЭО ====================
+@dp.message(lambda msg: msg.text == "📊 ТЭО")
+async def start_teo(message: types.Message, state: FSMContext):
+    await state.set_state(TEOStates.goal)
+    await message.answer(
+        "Какая основная цель проекта?",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(TEOStates.goal)
+async def process_teo_goal(message: types.Message, state: FSMContext):
+    if not message.text or len(message.text.strip()) == 0:
+        await message.answer("Пожалуйста, опишите цель.")
+        return
+    await state.update_data(goal=message.text)
+    await state.set_state(TEOStates.resources)
+    await message.answer("Какие ресурсы нужны? (люди, оборудование, ПО)", reply_markup=nav_keyboard())
+
+@dp.message(TEOStates.resources)
+async def process_teo_resources(message: types.Message, state: FSMContext):
+    if not message.text or len(message.text.strip()) == 0:
+        await message.answer("Пожалуйста, перечислите ресурсы.")
+        return
+    await state.update_data(resources=message.text)
+    await state.set_state(TEOStates.risks)
+    await message.answer("Какие риски видите? (пропустить)", reply_markup=nav_keyboard())
+
+@dp.message(TEOStates.risks)
+async def process_teo_risks(message: types.Message, state: FSMContext):
+    if message.text.lower() == "пропустить":
+        await state.update_data(risks="")
+    else:
+        await state.update_data(risks=message.text)
+    await state.set_state(TEOStates.norms)
+    await message.answer("Нормативные требования? (пропустить)", reply_markup=nav_keyboard())
+
+@dp.message(TEOStates.norms)
+async def process_teo_norms(message: types.Message, state: FSMContext):
+    if message.text.lower() == "пропустить":
+        await state.update_data(norms="")
+    else:
+        await state.update_data(norms=message.text)
+    await state.set_state(TEOStates.effect)
+    await message.answer("Ожидаемый экономический эффект? (пропустить)", reply_markup=nav_keyboard())
+
+@dp.message(TEOStates.effect)
+async def process_teo_effect(message: types.Message, state: FSMContext):
+    if message.text.lower() == "пропустить":
+        await state.update_data(effect="")
+    else:
+        await state.update_data(effect=message.text)
+    await state.set_state(TEOStates.data)
+    await message.answer("Есть готовые данные/расчёты? (загрузить файл или пропустить)", reply_markup=nav_keyboard())
+
+@dp.message(TEOStates.data)
+async def process_teo_data(message: types.Message, state: FSMContext):
+    if message.text.lower() == "пропустить":
+        await state.update_data(data="")
+    else:
+        # Временно просто сохраняем текст
+        await state.update_data(data=message.text)
+    await state.set_state(TEOStates.horizon)
+    # Покажем кнопки для горизонта планирования
+    horizon_kb = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="1 год"), KeyboardButton(text="3 года")], [KeyboardButton(text="5 лет")]],
+        resize_keyboard=True
+    )
+    await message.answer("Какой горизонт планирования?", reply_markup=horizon_kb)
+
+@dp.message(TEOStates.horizon)
+async def process_teo_horizon(message: types.Message, state: FSMContext):
+    if message.text not in ["1 год", "3 года", "5 лет"]:
+        await message.answer("Пожалуйста, выберите из предложенных вариантов.", reply_markup=nav_keyboard())
+        return
+    await state.update_data(horizon=message.text)
+    await state.set_state(TEOStates.files)
+    await message.answer("Приложите доп. материалы (пока только 'Пропустить')", reply_markup=nav_keyboard())
+
+@dp.message(TEOStates.files)
+async def process_teo_files(message: types.Message, state: FSMContext):
+    if message.text.lower() == "пропустить":
+        await state.update_data(files="")
+    else:
+        await state.update_data(files="(файл не загружен)")
+    
+    fields = {
+        "goal": "Цель",
+        "resources": "Ресурсы",
+        "risks": "Риски",
+        "norms": "Нормативы",
+        "effect": "Эффект",
+        "data": "Данные",
+        "horizon": "Горизонт",
+        "files": "Файлы"
+    }
+    await show_summary(message, state, "ТЭО", fields)
+
+# ---------- ЗАПУСК ----------
+async def main():
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())

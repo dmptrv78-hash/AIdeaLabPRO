@@ -1,0 +1,177 @@
+import asyncio
+import os
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+
+# Используйте свой новый токен (без лишних пробелов!)
+BOT_TOKEN = "8802501314:AAG0L8mrwSTNUqhrsHWIWGarw8QlZgtJXGQ"
+
+storage = MemoryStorage()
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher(storage=storage)
+
+# ---------- КЛАВИАТУРА ГЛАВНОГО МЕНЮ ----------
+def main_menu_keyboard():
+    kb = [
+        [KeyboardButton(text="📋 Техническое задание")],
+        [KeyboardButton(text="📊 ТЭО")],
+        [KeyboardButton(text="💰 Финансовая модель")],
+        [KeyboardButton(text="📈 Бизнес-план")],
+        [KeyboardButton(text="📦 Полный пакет")],
+        [KeyboardButton(text="🔍 Проверка документов")],
+        [KeyboardButton(text="✏️ Доработка документов")],
+        [KeyboardButton(text="💬 Консультация")],
+        [KeyboardButton(text="📋 Мои заявки")],
+        [KeyboardButton(text="❓ Помощь")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+# ---------- СОСТОЯНИЯ ДЛЯ ТЗ ----------
+class TZStates(StatesGroup):
+    name = State()
+    essence = State()
+    audience = State()
+    features = State()
+    competitors = State()
+    tech_limits = State()
+    deadline = State()
+    budget = State()
+    files = State()
+
+# ---------- ОБРАБОТЧИК /start ----------
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer(
+        "Добро пожаловать в AIdea Lab PRO! Выберите услугу:",
+        reply_markup=main_menu_keyboard()
+    )
+
+# ---------- НАЧАЛО СЦЕНАРИЯ ТЗ ----------
+@dp.message(lambda msg: msg.text == "📋 Техническое задание")
+async def start_tz(message: types.Message, state: FSMContext):
+    await state.set_state(TZStates.name)
+    await message.answer(
+        "Начнём с названия. Как назовём ваш проект?",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+# ---------- ШАГ 1 ----------
+@dp.message(TZStates.name)
+async def process_name(message: types.Message, state: FSMContext):
+    if not message.text or len(message.text.strip()) == 0:
+        await message.answer("Пожалуйста, введите название.")
+        return
+    await state.update_data(name=message.text)
+    await state.set_state(TZStates.essence)
+    await message.answer("Коротко: в чём суть проекта?")
+
+# ---------- ШАГ 2 ----------
+@dp.message(TZStates.essence)
+async def process_essence(message: types.Message, state: FSMContext):
+    if not message.text or len(message.text.strip()) == 0:
+        await message.answer("Опишите суть проекта.")
+        return
+    await state.update_data(essence=message.text)
+    await state.set_state(TZStates.audience)
+    await message.answer("Кто ваша ЦА? (можно пропустить, напишите 'Пропустить')")
+
+# ---------- ШАГ 3 ----------
+@dp.message(TZStates.audience)
+async def process_audience(message: types.Message, state: FSMContext):
+    if message.text.lower() == "пропустить":
+        await state.update_data(audience="")
+    else:
+        await state.update_data(audience=message.text)
+    await state.set_state(TZStates.features)
+    await message.answer("Перечислите ключевые функции через запятую.")
+
+# ---------- ШАГ 4 ----------
+@dp.message(TZStates.features)
+async def process_features(message: types.Message, state: FSMContext):
+    if not message.text or len(message.text.strip()) == 0:
+        await message.answer("Пожалуйста, перечислите функции.")
+        return
+    await state.update_data(features=message.text)
+    await state.set_state(TZStates.competitors)
+    await message.answer("Конкуренты? (пропустить)")
+
+# ---------- ШАГ 5 ----------
+@dp.message(TZStates.competitors)
+async def process_competitors(message: types.Message, state: FSMContext):
+    if message.text.lower() == "пропустить":
+        await state.update_data(competitors="")
+    else:
+        await state.update_data(competitors=message.text)
+    await state.set_state(TZStates.tech_limits)
+    await message.answer("Технические ограничения? (пропустить)")
+
+# ---------- ШАГ 6 ----------
+@dp.message(TZStates.tech_limits)
+async def process_tech_limits(message: types.Message, state: FSMContext):
+    if message.text.lower() == "пропустить":
+        await state.update_data(tech_limits="")
+    else:
+        await state.update_data(tech_limits=message.text)
+    await state.set_state(TZStates.deadline)
+    await message.answer("Сроки? (пропустить)")
+
+# ---------- ШАГ 7 ----------
+@dp.message(TZStates.deadline)
+async def process_deadline(message: types.Message, state: FSMContext):
+    if message.text.lower() == "пропустить":
+        await state.update_data(deadline="")
+    else:
+        await state.update_data(deadline=message.text)
+    await state.set_state(TZStates.budget)
+    await message.answer("Бюджет? (пропустить)")
+
+# ---------- ШАГ 8 ----------
+@dp.message(TZStates.budget)
+async def process_budget(message: types.Message, state: FSMContext):
+    if message.text.lower() == "пропустить":
+        await state.update_data(budget="")
+    else:
+        await state.update_data(budget=message.text)
+    await state.set_state(TZStates.files)
+    await message.answer("Приложите файлы (пока можно только 'Пропустить')")
+
+# ---------- ШАГ 9 ----------
+@dp.message(TZStates.files)
+async def process_files(message: types.Message, state: FSMContext):
+    if message.text.lower() == "пропустить":
+        await state.update_data(files="")
+    else:
+        # Временно пропускаем реальную загрузку файлов
+        await state.update_data(files="(файл не загружен)")
+
+    # Получаем все данные и выводим сводку
+    data = await state.get_data()
+    summary = (
+        f"📋 ВСЕ ДАННЫЕ ДЛЯ ТЗ:\n\n"
+        f"1. Название: {data.get('name', '—')}\n"
+        f"2. Суть: {data.get('essence', '—')}\n"
+        f"3. Аудитория: {data.get('audience', '—')}\n"
+        f"4. Функции: {data.get('features', '—')}\n"
+        f"5. Конкуренты: {data.get('competitors', '—')}\n"
+        f"6. Тех. ограничения: {data.get('tech_limits', '—')}\n"
+        f"7. Сроки: {data.get('deadline', '—')}\n"
+        f"8. Бюджет: {data.get('budget', '—')}\n"
+        f"9. Файлы: {data.get('files', '—')}"
+    )
+    await message.answer(
+        f"{summary}\n\n✅ Заявка создана! Передаём специалисту.",
+        reply_markup=main_menu_keyboard()
+    )
+    await state.clear()
+
+# ---------- ЗАПУСК ----------
+async def main():
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
