@@ -1,6 +1,6 @@
 # ============================================================
 # AIdea Lab PRO – Telegram бот для бизнес-документов
-# Версия 4.1 – с email-уведомлениями
+# Версия 4.2 – с абсолютным путём к БД и email-уведомлениями
 # ============================================================
 
 import asyncio
@@ -12,6 +12,7 @@ import random
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from pathlib import Path   # <-- для абсолютного пути к БД
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
@@ -47,12 +48,17 @@ print("4. Создаём диспетчер...")
 dp = Dispatcher(storage=storage)
 print("5. Диспетчер создан")
 
-# ===================== БАЗА ДАННЫХ =====================
+# ===================== БАЗА ДАННЫХ (абсолютный путь) =====================
 from sqlalchemy import Column, Integer, String, Text, Float, DateTime, select
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-DATABASE_URL = "sqlite+aiosqlite:///bot.db"
+# Определяем абсолютный путь к файлу bot.db
+BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = BASE_DIR / "bot.db"
+DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH}"
+print(f"📂 База данных будет создана по пути: {DB_PATH}")
+
 engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 Base = declarative_base()
@@ -64,7 +70,7 @@ class User(Base):
     username = Column(String, nullable=True)
     full_name = Column(String, nullable=True)
     phone = Column(String, nullable=True)
-    email = Column(String, nullable=True)   # <-- добавлено
+    email = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 class Order(Base):
@@ -87,8 +93,15 @@ class OrderFile(Base):
     uploaded_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 async def init_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        print("✅ База данных инициализирована")
+    except Exception as e:
+        print(f"❌ Ошибка инициализации БД: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 async def get_or_create_user(telegram_id, username=None, full_name=None):
     async with AsyncSessionLocal() as session:
@@ -291,7 +304,7 @@ class StrategyStates(StatesGroup):
 class BPSportsStates(StatesGroup):
     infrastructure, scale, data_available, confirm = [State() for _ in range(4)]
 
-class CommonStates(StatesGroup):   # <-- новое состояние для запроса email
+class CommonStates(StatesGroup):
     ask_email = State()
 
 # ===================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====================
