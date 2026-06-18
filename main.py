@@ -1,6 +1,6 @@
 # ============================================================
 # AIdea Lab PRO – Telegram бот для бизнес-документов
-# Версия 4.7 – исправлена ошибка инициализации БД
+# Версия 4.8 – юридические ссылки через переменные окружения
 # ============================================================
 
 import asyncio
@@ -30,6 +30,10 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "8802501314:AAG0L8mrwSTNUqhrsHWIWGarw8QlZgtJX
 PROVIDER_TOKEN = os.getenv("PROVIDER_TOKEN", "TEST")
 MANAGER_GROUP_ID = os.getenv("MANAGER_GROUP_ID", "-1001234567890")
 ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "123456789").split(',')))
+
+# Юридические ссылки (можно задать через переменные окружения)
+PRIVACY_POLICY_URL = os.getenv("PRIVACY_POLICY_URL", "https://example.com/privacy")
+OFFER_URL = os.getenv("OFFER_URL", "https://example.com/offer")
 
 storage = MemoryStorage()
 
@@ -93,7 +97,7 @@ class OrderFile(Base):
     file_path = Column(String, nullable=False)
     uploaded_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-# ===================== ИНИЦИАЛИЗАЦИЯ БД (ИСПРАВЛЕНО) =====================
+# ===================== ИНИЦИАЛИЗАЦИЯ БД =====================
 async def init_db():
     try:
         # 1. Создаём таблицы, если их нет
@@ -361,10 +365,10 @@ async def cmd_start(message: types.Message, state: FSMContext):
             [InlineKeyboardButton(text="❌ Не согласен", callback_data="decline_consent")]
         ])
         await message.answer(
-            "Для продолжения работы с ботом необходимо ваше согласие на обработку персональных данных. "
-            "Мы собираем только имя, телефон и email для связи по вашему заказу. "
-            "Подробнее: [Политика конфиденциальности](ссылка) и [Оферта](ссылка).\n\n"
-            "Нажимая «Согласен», вы подтверждаете, что ознакомлены и согласны с условиями.",
+            f"Для продолжения работы с ботом необходимо ваше согласие на обработку персональных данных. "
+            f"Мы собираем только имя, телефон и email для связи по вашему заказу. "
+            f"Подробнее: [Политика конфиденциальности]({PRIVACY_POLICY_URL}) и [Оферта]({OFFER_URL}).\n\n"
+            f"Нажимая «Согласен», вы подтверждаете, что ознакомлены и согласны с условиями.",
             reply_markup=kb,
             parse_mode="Markdown"
         )
