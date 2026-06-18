@@ -1,9 +1,7 @@
 import os
 import asyncio
 import threading
-import time
 from flask import Flask
-from main import bot, dp, main as bot_main
 
 app = Flask(__name__)
 
@@ -15,24 +13,18 @@ def index():
 def health():
     return "OK", 200
 
-def run_bot():
-    print("🔄 Запуск бота...")
-    # Создаём новый цикл событий в этом потоке
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(bot_main())
-    except Exception as e:
-        print(f"❌ Ошибка при запуске бота: {e}")
-        import traceback
-        traceback.print_exc()
-    finally:
-        loop.close()
+def run_flask():
+    """Запускает Flask-сервер в отдельном потоке"""
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, threaded=True)
 
 if __name__ == "__main__":
-    print("🚀 Запуск Flask-сервера...")
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    print("✅ Поток бота запущен")
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    # 1. Сначала запускаем Flask в фоновом потоке
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    print("✅ Flask запущен в фоновом потоке")
+
+    # 2. Затем запускаем бота в главном потоке
+    from main import main
+    print("🔄 Запуск бота...")
+    asyncio.run(main())
