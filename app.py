@@ -1,38 +1,43 @@
 import os
 import asyncio
-from flask import Flask, request
+from aiohttp import web
 from main import bot, dp, init_db
 from aiogram.types import Update
 
-app = Flask(__name__)
-
-@app.route("/")
-def index():
-    return "Bot is running!"
-
-@app.route("/health")
-def health():
-    return "OK", 200
-
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    data = request.get_json()
-    if not data:
-        return "Bad request", 400
+async def handle_webhook(request):
+    """Обработчик вебхука"""
+    data = await request.json()
     update = Update.model_validate(data, context={"bot": bot})
-    # Выполняем асинхронную обработку синхронно
-    asyncio.run(dp.feed_update(bot, update))
-    return "OK", 200
+    await dp.feed_update(bot, update)
+    return web.Response(text="OK", status=200)
 
-def set_webhook():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(init_db())
+async def health(request):
+    return web.Response(text="OK", status=200)
+
+async def index(request):
+    return web.Response(text="Bot is running!")
+
+async def on_startup(app):
+    """Инициализация БД и установка вебхука при старте"""
+    await init_db()
     webhook_url = os.environ.get("RENDER_EXTERNAL_URL", "https://aidealabpro-bot.onrender.com") + "/webhook"
-    loop.run_until_complete(bot.set_webhook(url=webhook_url))
+    await bot.set_webhook(url=webhook_url)
     print(f"✅ Webhook установлен на {webhook_url}")
 
-if __name__ == "__main__":
-    set_webhook()
+async def on_shutdown(app):
+    """Удаление вебхука при остановке"""
+    await bot.delete_webhook()
+    print("Webhook удалён")
+
+def main():
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app = web.Application()
+    app.router.add_get("/", index)
+    app.router.add_get("/health", health)
+    app.router.add_post("/webhook", handle_webhook)
+    app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
+    web.run_app(app, host="0.0.0.0", port=port)
+
+if __name__ == "__main__":
+    main()
