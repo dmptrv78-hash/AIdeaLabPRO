@@ -1,6 +1,6 @@
 # ============================================================
 # AIdea Lab PRO – Telegram бот для бизнес-документов
-# Версия 4.3 – исправлено автоматическое добавление email
+# Версия 4.3 – ИСПРАВЛЕНА ОШИБКА С EMAIL
 # ============================================================
 
 import asyncio
@@ -49,7 +49,7 @@ dp = Dispatcher(storage=storage)
 print("5. Диспетчер создан")
 
 # ===================== БАЗА ДАННЫХ (абсолютный путь) =====================
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime, select
+from sqlalchemy import Column, Integer, String, Text, Float, DateTime, select, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 
@@ -92,7 +92,7 @@ class OrderFile(Base):
     file_path = Column(String, nullable=False)
     uploaded_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-# ===================== ИНИЦИАЛИЗАЦИЯ БД =====================
+# ===================== ИНИЦИАЛИЗАЦИЯ БД (ИСПРАВЛЕНО) =====================
 async def init_db():
     try:
         async with engine.begin() as conn:
@@ -100,7 +100,8 @@ async def init_db():
             await conn.run_sync(Base.metadata.create_all)
             # Пытаемся добавить столбец email, если его нет
             try:
-                await conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
+                await conn.execute(text("ALTER TABLE users ADD COLUMN email TEXT"))
+                await conn.commit()
                 print("✅ Столбец email добавлен в таблицу users")
             except Exception as e:
                 if "duplicate column name" in str(e).lower():
