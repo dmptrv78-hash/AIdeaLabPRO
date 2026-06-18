@@ -5,7 +5,6 @@ from main import bot, dp, init_db
 from aiogram.types import Update
 
 async def handle_webhook(request):
-    """Обработчик вебхука"""
     try:
         data = await request.json()
         update = Update.model_validate(data, context={"bot": bot})
@@ -22,16 +21,13 @@ async def index(request):
     return web.Response(text="Bot is running!")
 
 async def on_startup(app):
-    """Инициализация БД и установка вебхука при старте"""
     await init_db()
     webhook_url = os.environ.get("RENDER_EXTERNAL_URL", "https://aidealabpro.onrender.com") + "/webhook"
     await bot.set_webhook(url=webhook_url)
     print(f"✅ Webhook установлен на {webhook_url}")
 
 async def on_shutdown(app):
-    """Удаление вебхука при остановке"""
     await bot.delete_webhook()
-    # Закрываем aiohttp-сессию бота, чтобы избежать Unclosed client session
     await bot.session.close()
     print("Webhook удалён, сессия закрыта")
 
@@ -46,4 +42,4 @@ async def main():
     web.run_app(app, host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
