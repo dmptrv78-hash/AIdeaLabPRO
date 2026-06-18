@@ -1,6 +1,6 @@
 # ============================================================
 # AIdea Lab PRO – Telegram бот для бизнес-документов
-# Версия 4.3 – ИСПРАВЛЕНА ОШИБКА С EMAIL
+# Версия 4.4 – исправлена обработка "пропустить"
 # ============================================================
 
 import asyncio
@@ -92,7 +92,7 @@ class OrderFile(Base):
     file_path = Column(String, nullable=False)
     uploaded_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-# ===================== ИНИЦИАЛИЗАЦИЯ БД (ИСПРАВЛЕНО) =====================
+# ===================== ИНИЦИАЛИЗАЦИЯ БД =====================
 async def init_db():
     try:
         async with engine.begin() as conn:
@@ -431,7 +431,7 @@ async def tz_essence(message: types.Message, state: FSMContext):
 
 @dp.message(TZStates.audience)
 async def tz_audience(message: types.Message, state: FSMContext):
-    if message.text.lower() == "пропустить":
+    if "пропустить" in message.text.lower():
         await state.update_data(audience="")
     else:
         await state.update_data(audience=message.text)
@@ -449,7 +449,7 @@ async def tz_features(message: types.Message, state: FSMContext):
 
 @dp.message(TZStates.competitors)
 async def tz_competitors(message: types.Message, state: FSMContext):
-    if message.text.lower() == "пропустить":
+    if "пропустить" in message.text.lower():
         await state.update_data(competitors="")
     else:
         await state.update_data(competitors=message.text)
@@ -458,7 +458,7 @@ async def tz_competitors(message: types.Message, state: FSMContext):
 
 @dp.message(TZStates.tech_limits)
 async def tz_tech_limits(message: types.Message, state: FSMContext):
-    if message.text.lower() == "пропустить":
+    if "пропустить" in message.text.lower():
         await state.update_data(tech_limits="")
     else:
         await state.update_data(tech_limits=message.text)
@@ -467,7 +467,7 @@ async def tz_tech_limits(message: types.Message, state: FSMContext):
 
 @dp.message(TZStates.deadline)
 async def tz_deadline(message: types.Message, state: FSMContext):
-    if message.text.lower() == "пропустить":
+    if "пропустить" in message.text.lower():
         await state.update_data(deadline="")
     else:
         await state.update_data(deadline=message.text)
@@ -477,7 +477,7 @@ async def tz_deadline(message: types.Message, state: FSMContext):
 @dp.message(TZStates.budget)
 async def tz_budget(message: types.Message, state: FSMContext):
     text = message.text.lower().strip()
-    if text == "пропустить":
+    if "пропустить" in text:
         await state.update_data(budget="")
         await state.set_state(TZStates.files)
         await message.answer("Приложите дополнительные материалы (макеты, референсы). Пока можно только пропустить.", reply_markup=nav_keyboard())
@@ -519,10 +519,10 @@ async def tz_files(message: types.Message, state: FSMContext):
         file = await bot.get_file(file_id)
         await bot.download_file(file.file_path, file_path)
         await state.update_data(files=file_name)
-    elif message.text.lower() == "пропустить":
+    elif "пропустить" in message.text.lower():
         await state.update_data(files="")
     else:
-        await message.answer("Пожалуйста, загрузите файл или нажмите 'Пропустить'.")
+        await message.answer("Пожалуйста, загрузите файл или нажмите 'Пропустить'.", reply_markup=nav_keyboard())
         return
     data = await state.get_data()
     prompt = "Ты — эксперт по разработке ТЗ. На основе данных сгенерируй структурированное ТЗ в формате JSON."
@@ -542,7 +542,7 @@ async def tz_files(message: types.Message, state: FSMContext):
     }
     await finalize_order(message, state, "Техническое задание", fields)
 
-# ===================== СЦЕНАРИЙ ТЭО (сокращённо) =====================
+# ===================== СЦЕНАРИЙ ТЭО =====================
 @dp.message(lambda msg: msg.text == "📊 ТЭО")
 async def start_teo(message: types.Message, state: FSMContext):
     await state.set_state(TEOStates.goal)
@@ -568,7 +568,7 @@ async def teo_resources(message: types.Message, state: FSMContext):
 
 @dp.message(TEOStates.risks)
 async def teo_risks(message: types.Message, state: FSMContext):
-    if message.text.lower() == "пропустить":
+    if "пропустить" in message.text.lower():
         await state.update_data(risks="")
     else:
         await state.update_data(risks=message.text)
@@ -577,7 +577,7 @@ async def teo_risks(message: types.Message, state: FSMContext):
 
 @dp.message(TEOStates.norms)
 async def teo_norms(message: types.Message, state: FSMContext):
-    if message.text.lower() == "пропустить":
+    if "пропустить" in message.text.lower():
         await state.update_data(norms="")
     else:
         await state.update_data(norms=message.text)
@@ -586,7 +586,7 @@ async def teo_norms(message: types.Message, state: FSMContext):
 
 @dp.message(TEOStates.effect)
 async def teo_effect(message: types.Message, state: FSMContext):
-    if message.text.lower() == "пропустить":
+    if "пропустить" in message.text.lower():
         await state.update_data(effect="")
     else:
         await state.update_data(effect=message.text)
@@ -595,7 +595,7 @@ async def teo_effect(message: types.Message, state: FSMContext):
 
 @dp.message(TEOStates.data)
 async def teo_data(message: types.Message, state: FSMContext):
-    if message.text.lower() == "пропустить":
+    if "пропустить" in message.text.lower():
         await state.update_data(data="")
     else:
         await state.update_data(data=message.text)
@@ -621,10 +621,10 @@ async def teo_files(message: types.Message, state: FSMContext):
         file = await bot.get_file(file_id)
         await bot.download_file(file.file_path, file_path)
         await state.update_data(files=file_name)
-    elif message.text.lower() == "пропустить":
+    elif "пропустить" in message.text.lower():
         await state.update_data(files="")
     else:
-        await message.answer("Загрузите файл или нажмите 'Пропустить'.")
+        await message.answer("Загрузите файл или нажмите 'Пропустить'.", reply_markup=nav_keyboard())
         return
     fields = {
         "goal": "Главная задача",
@@ -673,7 +673,7 @@ async def fm_investment(message: types.Message, state: FSMContext):
 
 @dp.message(FMStates.breakeven)
 async def fm_breakeven(message: types.Message, state: FSMContext):
-    if message.text.lower() == "пропустить":
+    if "пропустить" in message.text.lower():
         await state.update_data(breakeven="")
     else:
         await state.update_data(breakeven=message.text)
@@ -682,7 +682,7 @@ async def fm_breakeven(message: types.Message, state: FSMContext):
 
 @dp.message(FMStates.metrics)
 async def fm_metrics(message: types.Message, state: FSMContext):
-    if message.text.lower() == "пропустить":
+    if "пропустить" in message.text.lower():
         await state.update_data(metrics="")
     else:
         await state.update_data(metrics=message.text)
@@ -691,7 +691,7 @@ async def fm_metrics(message: types.Message, state: FSMContext):
 
 @dp.message(FMStates.data)
 async def fm_data(message: types.Message, state: FSMContext):
-    if message.text.lower() == "пропустить":
+    if "пропустить" in message.text.lower():
         await state.update_data(data="")
     else:
         await state.update_data(data=message.text)
@@ -759,7 +759,7 @@ async def bp_marketing(message: types.Message, state: FSMContext):
 
 @dp.message(BPStates.team)
 async def bp_team(message: types.Message, state: FSMContext):
-    if message.text.lower() == "пропустить":
+    if "пропустить" in message.text.lower():
         await state.update_data(team="")
     else:
         await state.update_data(team=message.text)
@@ -768,7 +768,7 @@ async def bp_team(message: types.Message, state: FSMContext):
 
 @dp.message(BPStates.sales)
 async def bp_sales(message: types.Message, state: FSMContext):
-    if message.text.lower() == "пропустить":
+    if "пропустить" in message.text.lower():
         await state.update_data(sales="")
     else:
         await state.update_data(sales=message.text)
@@ -777,7 +777,7 @@ async def bp_sales(message: types.Message, state: FSMContext):
 
 @dp.message(BPStates.risks)
 async def bp_risks(message: types.Message, state: FSMContext):
-    if message.text.lower() == "пропустить":
+    if "пропустить" in message.text.lower():
         await state.update_data(risks="")
     else:
         await state.update_data(risks=message.text)
@@ -786,7 +786,7 @@ async def bp_risks(message: types.Message, state: FSMContext):
 
 @dp.message(BPStates.capital)
 async def bp_capital(message: types.Message, state: FSMContext):
-    if message.text.lower() == "пропустить":
+    if "пропустить" in message.text.lower():
         await state.update_data(capital="")
     else:
         await state.update_data(capital=message.text)
@@ -803,10 +803,10 @@ async def bp_finance_file(message: types.Message, state: FSMContext):
         file = await bot.get_file(file_id)
         await bot.download_file(file.file_path, file_path)
         await state.update_data(finance_file=file_name)
-    elif message.text.lower() == "пропустить":
+    elif "пропустить" in message.text.lower():
         await state.update_data(finance_file="")
     else:
-        await message.answer("Загрузите файл или нажмите 'Пропустить'.")
+        await message.answer("Загрузите файл или нажмите 'Пропустить'.", reply_markup=nav_keyboard())
         return
     await state.set_state(BPStates.files)
     await message.answer("Дополнительные материалы? (можно пропустить)", reply_markup=nav_keyboard())
@@ -821,10 +821,10 @@ async def bp_files(message: types.Message, state: FSMContext):
         file = await bot.get_file(file_id)
         await bot.download_file(file.file_path, file_path)
         await state.update_data(files=file_name)
-    elif message.text.lower() == "пропустить":
+    elif "пропустить" in message.text.lower():
         await state.update_data(files="")
     else:
-        await message.answer("Загрузите файл или нажмите 'Пропустить'.")
+        await message.answer("Загрузите файл или нажмите 'Пропустить'.", reply_markup=nav_keyboard())
         return
     fields = {
         "summary": "Резюме",
@@ -1021,7 +1021,7 @@ async def handle_free_text(message: types.Message, state: FSMContext):
 # ===================== ДОПОЛНИТЕЛЬНОЕ СОГЛАШЕНИЕ =====================
 @dp.message(ExtraAgreementStates.contract_info)
 async def extra_contract(message: types.Message, state: FSMContext):
-    await state.update_data(contract_info=message.text if message.text.lower() != "пропустить" else "не указано")
+    await state.update_data(contract_info=message.text if "пропустить" not in message.text.lower() else "не указано")
     await state.set_state(ExtraAgreementStates.changes)
     await message.answer("Что именно меняется? (цена, срок, условия)", reply_markup=nav_keyboard())
 
