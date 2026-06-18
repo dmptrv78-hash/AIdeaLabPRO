@@ -31,7 +31,7 @@ async def on_shutdown(app):
     await bot.session.close()
     print("Webhook удалён, сессия закрыта")
 
-async def main():
+def main():
     port = int(os.environ.get("PORT", 5000))
     app = web.Application()
     app.router.add_get("/", index)
@@ -42,4 +42,4 @@ async def main():
     web.run_app(app, host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
