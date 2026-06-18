@@ -1098,7 +1098,7 @@ async def legal_requirements(message: types.Message, state: FSMContext):
 # ===================== ЗАПУСК БОТА =====================
 async def main():
     await init_db()
-    await dp.start_polling(bot)
+    # await dp.start_polling(bot)   # отключено для webhook
 
 if __name__ == "__main__":
     asyncio.run(main())
