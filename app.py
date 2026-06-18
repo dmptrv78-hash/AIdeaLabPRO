@@ -6,10 +6,14 @@ from aiogram.types import Update
 
 async def handle_webhook(request):
     """Обработчик вебхука"""
-    data = await request.json()
-    update = Update.model_validate(data, context={"bot": bot})
-    await dp.feed_update(bot, update)
-    return web.Response(text="OK", status=200)
+    try:
+        data = await request.json()
+        update = Update.model_validate(data, context={"bot": bot})
+        await dp.feed_update(bot, update)
+        return web.Response(text="OK", status=200)
+    except Exception as e:
+        print(f"Ошибка в вебхуке: {e}")
+        return web.Response(text="Error", status=500)
 
 async def health(request):
     return web.Response(text="OK", status=200)
@@ -20,16 +24,18 @@ async def index(request):
 async def on_startup(app):
     """Инициализация БД и установка вебхука при старте"""
     await init_db()
-    webhook_url = os.environ.get("RENDER_EXTERNAL_URL", "https://aidealabpro-bot.onrender.com") + "/webhook"
+    webhook_url = os.environ.get("RENDER_EXTERNAL_URL", "https://aidealabpro.onrender.com") + "/webhook"
     await bot.set_webhook(url=webhook_url)
     print(f"✅ Webhook установлен на {webhook_url}")
 
 async def on_shutdown(app):
     """Удаление вебхука при остановке"""
     await bot.delete_webhook()
-    print("Webhook удалён")
+    # Закрываем aiohttp-сессию бота, чтобы избежать Unclosed client session
+    await bot.session.close()
+    print("Webhook удалён, сессия закрыта")
 
-def main():
+async def main():
     port = int(os.environ.get("PORT", 5000))
     app = web.Application()
     app.router.add_get("/", index)
