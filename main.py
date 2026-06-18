@@ -1,7 +1,6 @@
-
 # ============================================================
 # AIdea Lab PRO – Telegram бот для бизнес-документов
-# Версия 5.1 – удалён раздел "конный спорт"
+# Версия 5.2 – все уведомления на почту
 # ============================================================
 
 import asyncio
@@ -147,8 +146,11 @@ E-mail: support@aidealab.pro
 # ===================== КОНФИГУРАЦИЯ =====================
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8802501314:AAG0L8mrwSTNUqhrsHWIWGarw8QlZgtJXGQ")
 PROVIDER_TOKEN = os.getenv("PROVIDER_TOKEN", "TEST")
-MANAGER_GROUP_ID = os.getenv("MANAGER_GROUP_ID", "-1001234567890")
-ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "123456789").split(',')))
+# MANAGER_GROUP_ID – не используется, все уведомления на почту
+ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "1636715304").split(',')))  # ваш ID, если нужно
+
+# Целевой email для всех уведомлений
+MANAGER_EMAIL = "dmptrv78@gmail.com"
 
 storage = MemoryStorage()
 
@@ -313,12 +315,12 @@ def add_lead_to_gs(data):
         row = [data.get("name", ""), data.get("phone", ""), data.get("service", ""), json.dumps(data, ensure_ascii=False)]
         sheet.append_row(row)
 
-# ---- Уведомления менеджеров ----
-async def notify_managers(text):
-    try:
-        await bot.send_message(chat_id=MANAGER_GROUP_ID, text=text)
-    except Exception:
-        pass
+# ---- Уведомления менеджеров (отключены, используем email) ----
+# async def notify_managers(text):
+#     try:
+#         await bot.send_message(chat_id=MANAGER_GROUP_ID, text=text)
+#     except Exception:
+#         pass
 
 async def notify_admins(text):
     """Отправляет сообщение всем администраторам (по списку ADMIN_IDS)"""
@@ -468,14 +470,13 @@ async def finalize_order(message: types.Message, state: FSMContext, service_name
         summary += f"{label}: {data.get(key, '—')}\n"
     summary += f"\n💰 Стоимость: {price} руб."
     
-    await notify_managers(f"🔔 Новая заявка #{order_id}\nУслуга: {service_name}\nКлиент: @{message.from_user.username}\nДанные: {json.dumps(data, ensure_ascii=False)}")
-    
     # Отправка email менеджеру
-    manager_email = os.getenv("MANAGER_EMAIL")
-    if manager_email:
-        subject = f"🔔 Новая заявка #{order_id}"
-        body = f"Услуга: {service_name}\nКлиент: {user.full_name or user.username}\nТелефон: {user.phone or 'не указан'}\nEmail: {user.email or 'не указан'}\n\nДанные заявки:\n{summary}\n\nTelegram: @{message.from_user.username}\nID: {message.from_user.id}"
-        send_email(manager_email, subject, body)
+    subject = f"🔔 Новая заявка #{order_id}"
+    body = f"Услуга: {service_name}\nКлиент: {user.full_name or user.username}\nТелефон: {user.phone or 'не указан'}\nEmail: {user.email or 'не указан'}\n\nДанные заявки:\n{summary}\n\nTelegram: @{message.from_user.username}\nID: {message.from_user.id}"
+    send_email(MANAGER_EMAIL, subject, body)
+    
+    # Отключаем отправку в группу менеджеров, оставляем только email
+    # await notify_managers(f"🔔 Новая заявка #{order_id}\nУслуга: {service_name}\nКлиент: @{message.from_user.username}\nДанные: {json.dumps(data, ensure_ascii=False)}")
     
     await message.answer(summary)
     await message.answer("💳 Оплата временно отключена для тестирования. Заявка принята!")
@@ -633,7 +634,6 @@ async def process_feedback(message: types.Message, state: FSMContext):
 
     # Получаем данные пользователя
     user = await get_or_create_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
-    username = f"@{message.from_user.username}" if message.from_user.username else "без username"
     full_name = message.from_user.full_name or "не указано"
     user_id = message.from_user.id
 
@@ -642,22 +642,14 @@ async def process_feedback(message: types.Message, state: FSMContext):
         f"📩 НОВОЕ СООБЩЕНИЕ ОТ ПОЛЬЗОВАТЕЛЯ\n\n"
         f"👤 Имя: {full_name}\n"
         f"🆔 ID: {user_id}\n"
-        f"🔗 Профиль: [ссылка](tg://user?id={user_id})\n"
         f"📝 Текст сообщения:\n{text}"
     )
 
-    # Отправляем в группу менеджеров
-    sent_to_group = False
-    if MANAGER_GROUP_ID and str(MANAGER_GROUP_ID).lstrip('-').isdigit():
-        try:
-            await bot.send_message(chat_id=MANAGER_GROUP_ID, text=report, parse_mode="Markdown")
-            sent_to_group = True
-        except Exception as e:
-            print(f"Ошибка отправки в группу менеджеров: {e}")
+    # Отправляем на почту
+    send_email(MANAGER_EMAIL, f"Сообщение от пользователя {full_name}", report)
 
-    # Резерв – отправляем администраторам, если группа не доступна или не настроена
-    if not sent_to_group:
-        await notify_admins(report)
+    # Резерв – уведомляем администраторов в Telegram (если они есть)
+    await notify_admins(f"📩 Новое сообщение от {full_name} (ID: {user_id}). Проверьте почту.")
 
     # Подтверждение пользователю
     await state.clear()
@@ -1242,7 +1234,8 @@ async def set_status(callback: types.CallbackQuery, state: FSMContext):
     new_status = parts[3]
     if await update_order_status(order_id, new_status, notify_user=True):
         await callback.message.edit_text(f"Статус заявки #{order_id} изменён на {new_status}.")
-        await notify_managers(f"🔄 Менеджер @{callback.from_user.username} изменил статус заявки #{order_id} на {new_status}")
+        # Уведомление админов о смене статуса (опционально, можно закомментировать)
+        # await notify_admins(f"🔄 Менеджер @{callback.from_user.username} изменил статус заявки #{order_id} на {new_status}")
     else:
         await callback.message.edit_text("Ошибка изменения статуса.")
     await callback.answer()
