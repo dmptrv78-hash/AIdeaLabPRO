@@ -1,6 +1,7 @@
+
 # ============================================================
 # AIdea Lab PRO – Telegram бот для бизнес-документов
-# Версия 4.8 – юридические ссылки через переменные окружения
+# Версия 5.1 – удалён раздел "конный спорт"
 # ============================================================
 
 import asyncio
@@ -25,15 +26,129 @@ from aiogram.types import (
     # LabeledPrice, PreCheckoutQuery, SuccessfulPayment  # временно отключены
 )
 
+# ===================== ЮРИДИЧЕСКИЕ ТЕКСТЫ =====================
+PRIVACY_POLICY_TEXT = """
+ПОЛИТИКА КОНФИДЕНЦИАЛЬНОСТИ
+
+1. ОБЩИЕ ПОЛОЖЕНИЯ
+1.1. Настоящая Политика конфиденциальности (далее – Политика) действует в отношении всей информации, которую ИП Петров Дмитрий Евгеньевич (ОГРНИП 325665800177001, ИНН 591903202378, далее – Оператор) может получить о пользователе (далее – Пользователь) при использовании Telegram-бота @AIdeaLabPRO_bot (далее – Бот).
+1.2. Использование Бота означает безоговорочное согласие Пользователя с настоящей Политикой и указанными в ней условиями обработки его персональных данных. В случае несогласия с этими условиями Пользователь должен воздержаться от использования Бота.
+1.3. Настоящая Политика разработана в соответствии с Федеральным законом от 27.07.2006 № 152-ФЗ «О персональных данных».
+
+2. ПЕРСОНАЛЬНЫЕ ДАННЫЕ, КОТОРЫЕ МЫ СОБИРАЕМ
+2.1. Оператор собирает и обрабатывает следующие персональные данные Пользователя:
+- Имя, указанное в профиле Telegram;
+- Telegram ID;
+- Адрес электронной почты (если Пользователь предоставил его);
+- Номер телефона (если Пользователь предоставил его);
+- Данные, предоставленные в процессе заполнения заявок и опросов (название проекта, описание, функциональные требования и т.п.).
+2.2. Бот также автоматически собирает техническую информацию: дату и время взаимодействия, идентификаторы сообщений, тип устройства и браузера (через Telegram).
+
+3. ЦЕЛИ ОБРАБОТКИ ПЕРСОНАЛЬНЫХ ДАННЫХ
+3.1. Оператор обрабатывает персональные данные Пользователя для:
+- предоставления услуг по разработке технических заданий, бизнес-планов, финансовых моделей и других документов;
+- связи с Пользователем по его заявкам и вопросам;
+- направления уведомлений о статусе заявок;
+- улучшения качества обслуживания и аналитики.
+
+4. ПРАВОВЫЕ ОСНОВАНИЯ ОБРАБОТКИ
+4.1. Обработка персональных данных осуществляется на основании согласия Пользователя, выраженного путём нажатия кнопки «Согласен» в Боте.
+
+5. ПРАВА ПОЛЬЗОВАТЕЛЯ
+5.1. Пользователь имеет право:
+- отозвать своё согласие на обработку персональных данных в любой момент, направив уведомление Оператору по адресу support@aidealab.pro или через Бота;
+- требовать удаления своих персональных данных, если они обрабатываются с нарушением закона;
+- получать информацию о своих персональных данных, находящихся в распоряжении Оператора.
+
+6. СРОКИ ХРАНЕНИЯ И ПОРЯДОК УНИЧТОЖЕНИЯ
+6.1. Персональные данные хранятся не дольше, чем это требуется для целей их обработки, но в любом случае не более 3 лет с момента последнего взаимодействия Пользователя с Ботом.
+6.2. Уничтожение данных производится по запросу Пользователя или по истечении срока хранения.
+
+7. МЕРЫ ЗАЩИТЫ
+7.1. Оператор принимает необходимые организационные и технические меры для защиты персональных данных от неправомерного доступа, уничтожения, изменения, блокирования, копирования, распространения.
+
+8. ЗАКЛЮЧИТЕЛЬНЫЕ ПОЛОЖЕНИЯ
+8.1. Оператор вправе вносить изменения в настоящую Политику. Новая редакция вступает в силу с момента её публикации в Боте.
+8.2. Все вопросы по исполнению Политики направлять по адресу: support@aidealab.pro.
+"""
+
+OFFER_TEXT = """
+ПУБЛИЧНАЯ ОФЕРТА
+на оказание услуг по разработке документов
+
+г. Москва                                            18 июня 2026 г.
+
+ИП Петров Дмитрий Евгеньевич (ОГРНИП 325665800177001, ИНН 591903202378), действующий на основании законодательства РФ, публикует настоящую Оферту о заключении договора на оказание услуг по разработке документов (далее – Договор) с любым лицом, принявшим условия настоящей Оферты (далее – Заказчик).
+
+1. ТЕРМИНЫ И ОПРЕДЕЛЕНИЯ
+1.1. Исполнитель – ИП Петров Дмитрий Евгеньевич.
+1.2. Заказчик – физическое или юридическое лицо, принявшее условия настоящей Оферты.
+1.3. Услуги – разработка технического задания (ТЗ), технико-экономического обоснования (ТЭО), финансовой модели, бизнес-плана, полного пакета документов, а также проверка и доработка документов и консультации.
+1.4. Бот – Telegram-бот @AIdeaLabPRO_bot, через который осуществляется взаимодействие.
+1.5. Акцепт – полное и безоговорочное принятие условий Оферты путём оплаты услуг или направления заявки через Бот.
+
+2. ПРЕДМЕТ ДОГОВОРА
+2.1. Исполнитель обязуется оказать Заказчику услуги, перечень и стоимость которых определяются в соответствии с тарифами, опубликованными в Боте, а Заказчик обязуется оплатить их.
+2.2. Услуги считаются оказанными надлежащим образом после передачи Заказчику готового документа в электронном виде через Бот или по электронной почте.
+
+3. ПОРЯДОК ЗАКЛЮЧЕНИЯ ДОГОВОРА (АКЦЕПТ)
+3.1. Заказчик выражает согласие с условиями Оферты путём:
+- отправки заявки через Бот и её оплаты;
+- или иного действия, свидетельствующего о намерении воспользоваться услугами.
+3.2. Акцепт Оферты создаёт юридически обязывающий договор между Исполнителем и Заказчиком (ст. 438 ГК РФ).
+3.3. Акцепт признаётся полным, если Заказчик выполнил все условия, необходимые для получения услуги.
+
+4. СТОИМОСТЬ УСЛУГ И ПОРЯДОК ОПЛАТЫ
+4.1. Стоимость услуг определяется автоматически Ботом на основе выбранной услуги, объёма, срочности и других параметров, и указывается в финальном сообщении перед оплатой.
+4.2. Окончательная цена фиксируется в счёте, выставленном через ЮKassa.
+4.3. Оплата производится в российских рублях безналичным способом через ЮKassa (банковские карты, СБП, ЮMoney).
+4.4. Оплата считается выполненной при поступлении денежных средств на расчётный счёт Исполнителя.
+
+5. ПРАВА И ОБЯЗАННОСТИ СТОРОН
+5.1. Исполнитель обязуется:
+- оказать услуги в сроки, указанные в заявке;
+- обеспечить качество документов в соответствии с общепринятыми стандартами;
+- сохранять конфиденциальность информации, полученной от Заказчика.
+5.2. Заказчик обязуется:
+- предоставить достоверные данные, необходимые для оказания услуг;
+- оплатить услуги в установленном порядке;
+- своевременно сообщать об изменениях контактных данных.
+
+6. ПОРЯДОК ВОЗВРАТА ДЕНЕЖНЫХ СРЕДСТВ
+6.1. Возврат денежных средств возможен только до момента начала оказания услуг (статус заявки «Оплачено, не начато»). В этом случае возвращается полная сумма оплаты.
+6.2. После начала работ (статус «В работе») возврат не производится, но Исполнитель гарантирует доработку документа до полного соответствия заявке в рамках согласованного ТЗ.
+6.3. Для оформления возврата Заказчик направляет письменное заявление на адрес support@aidealab.pro.
+6.4. Возврат осуществляется в течение 10 рабочих дней с момента получения заявления.
+
+7. ОТВЕТСТВЕННОСТЬ СТОРОН
+7.1. Исполнитель несёт ответственность за ненадлежащее оказание услуг в соответствии с законодательством РФ.
+7.2. Заказчик несёт ответственность за достоверность предоставленных данных.
+7.3. Исполнитель не несёт ответственности за действия Telegram и третьих лиц.
+
+8. ПОРЯДОК РАЗРЕШЕНИЯ СПОРОВ
+8.1. Споры решаются путём переговоров. При недостижении согласия – в судебном порядке по месту нахождения Исполнителя.
+
+9. СРОК ДЕЙСТВИЯ ОФЕРТЫ
+9.1. Настоящая Оферта вступает в силу с момента её опубликования в Боте и действует до её отзыва Исполнителем.
+9.2. Исполнитель вправе изменять условия Оферты в одностороннем порядке с обязательным уведомлением Заказчиков через Бот.
+
+10. РЕКВИЗИТЫ ИСПОЛНИТЕЛЯ
+ИП Петров Дмитрий Евгеньевич
+ИНН: 591903202378
+ОГРНИП: 325665800177001
+Расчётный счёт: 40802810123456789012
+Банк: ПАО Сбербанк
+БИК: 044525225
+Кор. счёт: 30101810400000000225
+Юридический адрес: 127000, г. Москва, ул. Примерная, д. 1, кв. 1
+E-mail: support@aidealab.pro
+"""
+
 # ===================== КОНФИГУРАЦИЯ =====================
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8802501314:AAG0L8mrwSTNUqhrsHWIWGarw8QlZgtJXGQ")
 PROVIDER_TOKEN = os.getenv("PROVIDER_TOKEN", "TEST")
 MANAGER_GROUP_ID = os.getenv("MANAGER_GROUP_ID", "-1001234567890")
 ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "123456789").split(',')))
-
-# Юридические ссылки (можно задать через переменные окружения)
-PRIVACY_POLICY_URL = os.getenv("PRIVACY_POLICY_URL", "https://example.com/privacy")
-OFFER_URL = os.getenv("OFFER_URL", "https://example.com/offer")
 
 storage = MemoryStorage()
 
@@ -205,6 +320,14 @@ async def notify_managers(text):
     except Exception:
         pass
 
+async def notify_admins(text):
+    """Отправляет сообщение всем администраторам (по списку ADMIN_IDS)"""
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(admin_id, text)
+        except Exception:
+            pass
+
 # ===================== EMAIL =====================
 def send_email(to_email, subject, body):
     try:
@@ -247,7 +370,6 @@ def calculate_price(service, data=None):
         "Дополнительное соглашение": 300,
         "Грант Агростартап": 6500,
         "Стратегия строительства": 6800,
-        "Бизнес-план конный спорт": 6500,
         "Юридическая доработка договоров": 6500,
     }
     price = base.get(service, 1500)
@@ -273,12 +395,18 @@ def main_menu_keyboard():
         [KeyboardButton(text="✏️ Доработка документов")],
         [KeyboardButton(text="💬 Консультация")],
         [KeyboardButton(text="📋 Мои заявки")],
+        [KeyboardButton(text="📩 Написать разработчику")],
         [KeyboardButton(text="❓ Помощь")]
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
 def nav_keyboard():
     kb = [[KeyboardButton(text="🔙 Назад"), KeyboardButton(text="🏠 Главное меню")], [KeyboardButton(text="⏭ Пропустить")]]
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+def feedback_keyboard():
+    """Клавиатура для состояния обратной связи (только кнопка отмены)"""
+    kb = [[KeyboardButton(text="❌ Отмена")]]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
 def horizon_keyboard():
@@ -320,12 +448,12 @@ class GrantStates(StatesGroup):
 class StrategyStates(StatesGroup):
     has_company, has_subcontractors, urgent_tasks, need_sales, confirm = [State() for _ in range(5)]
 
-class BPSportsStates(StatesGroup):
-    infrastructure, scale, data_available, confirm = [State() for _ in range(4)]
-
 class CommonStates(StatesGroup):
     ask_consent = State()
     ask_email = State()
+
+class FeedbackStates(StatesGroup):
+    waiting_for_message = State()
 
 # ===================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====================
 async def finalize_order(message: types.Message, state: FSMContext, service_name: str, fields: dict, price_override=None):
@@ -361,14 +489,15 @@ async def cmd_start(message: types.Message, state: FSMContext):
     # Если согласие ещё не получено – спрашиваем
     if not user.consent_given:
         kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📄 Политика конфиденциальности", callback_data="show_privacy")],
+            [InlineKeyboardButton(text="📄 Оферта", callback_data="show_offer")],
             [InlineKeyboardButton(text="✅ Согласен", callback_data="accept_consent")],
             [InlineKeyboardButton(text="❌ Не согласен", callback_data="decline_consent")]
         ])
         await message.answer(
-            f"Для продолжения работы с ботом необходимо ваше согласие на обработку персональных данных. "
-            f"Мы собираем только имя, телефон и email для связи по вашему заказу. "
-            f"Подробнее: [Политика конфиденциальности]({PRIVACY_POLICY_URL}) и [Оферта]({OFFER_URL}).\n\n"
-            f"Нажимая «Согласен», вы подтверждаете, что ознакомлены и согласны с условиями.",
+            "Для продолжения работы с ботом необходимо ваше согласие на обработку персональных данных.\n"
+            "Мы собираем только имя, телефон и email для связи по вашему заказу.\n\n"
+            "Ознакомьтесь с документами, нажав кнопки ниже, и, если вы согласны, нажмите «Согласен».",
             reply_markup=kb,
             parse_mode="Markdown"
         )
@@ -384,6 +513,20 @@ async def cmd_start(message: types.Message, state: FSMContext):
         )
         return
     await message.answer("Добро пожаловать в AIdea Lab PRO!\n\nВыберите услугу:", reply_markup=main_menu_keyboard())
+
+@dp.callback_query(lambda c: c.data == "show_privacy")
+async def show_privacy_callback(callback: types.CallbackQuery):
+    await callback.message.answer(PRIVACY_POLICY_TEXT[:4096])
+    if len(PRIVACY_POLICY_TEXT) > 4096:
+        await callback.message.answer(PRIVACY_POLICY_TEXT[4096:])
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "show_offer")
+async def show_offer_callback(callback: types.CallbackQuery):
+    await callback.message.answer(OFFER_TEXT[:4096])
+    if len(OFFER_TEXT) > 4096:
+        await callback.message.answer(OFFER_TEXT[4096:])
+    await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "accept_consent")
 async def accept_consent(callback: types.CallbackQuery, state: FSMContext):
@@ -453,7 +596,6 @@ async def go_back(message: types.Message, state: FSMContext):
         "LegalDocStates": {"has_projects":"contract_types", "deadline":"has_projects", "registry":"deadline", "requirements":"registry", "confirm":"requirements"},
         "GrantStates": {"has_bp":"direction", "documents":"has_bp", "confirm":"documents"},
         "StrategyStates": {"has_subcontractors":"has_company", "urgent_tasks":"has_subcontractors", "need_sales":"urgent_tasks", "confirm":"need_sales"},
-        "BPSportsStates": {"scale":"infrastructure", "data_available":"scale", "confirm":"data_available"},
     }
     prefix = current.split(":")[0]
     step = current.split(":")[1]
@@ -464,6 +606,65 @@ async def go_back(message: types.Message, state: FSMContext):
         await message.answer("Вернулись назад.", reply_markup=nav_keyboard())
     else:
         await message.answer("Это первый шаг.", reply_markup=nav_keyboard())
+
+# ===================== ОБРАТНАЯ СВЯЗЬ (Написать разработчику) =====================
+@dp.message(lambda msg: msg.text == "📩 Написать разработчику")
+async def start_feedback(message: types.Message, state: FSMContext):
+    await state.set_state(FeedbackStates.waiting_for_message)
+    await message.answer(
+        "📝 Напишите ваше сообщение разработчику (до 1000 символов).\n"
+        "Мы постараемся ответить вам как можно быстрее.\n\n"
+        "Для отмены нажмите кнопку «Отмена».",
+        reply_markup=feedback_keyboard()
+    )
+
+@dp.message(FeedbackStates.waiting_for_message)
+async def process_feedback(message: types.Message, state: FSMContext):
+    # Проверяем, не нажата ли кнопка "Отмена"
+    if message.text == "❌ Отмена":
+        await state.clear()
+        await message.answer("✅ Отправка отменена. Возвращаемся в меню.", reply_markup=main_menu_keyboard())
+        return
+
+    text = message.text.strip()
+    if len(text) > 1000:
+        await message.answer(f"❌ Сообщение слишком длинное ({len(text)} символов). Максимум 1000 символов. Пожалуйста, сократите.")
+        return
+
+    # Получаем данные пользователя
+    user = await get_or_create_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
+    username = f"@{message.from_user.username}" if message.from_user.username else "без username"
+    full_name = message.from_user.full_name or "не указано"
+    user_id = message.from_user.id
+
+    # Формируем сообщение для менеджеров
+    report = (
+        f"📩 НОВОЕ СООБЩЕНИЕ ОТ ПОЛЬЗОВАТЕЛЯ\n\n"
+        f"👤 Имя: {full_name}\n"
+        f"🆔 ID: {user_id}\n"
+        f"🔗 Профиль: [ссылка](tg://user?id={user_id})\n"
+        f"📝 Текст сообщения:\n{text}"
+    )
+
+    # Отправляем в группу менеджеров
+    sent_to_group = False
+    if MANAGER_GROUP_ID and str(MANAGER_GROUP_ID).lstrip('-').isdigit():
+        try:
+            await bot.send_message(chat_id=MANAGER_GROUP_ID, text=report, parse_mode="Markdown")
+            sent_to_group = True
+        except Exception as e:
+            print(f"Ошибка отправки в группу менеджеров: {e}")
+
+    # Резерв – отправляем администраторам, если группа не доступна или не настроена
+    if not sent_to_group:
+        await notify_admins(report)
+
+    # Подтверждение пользователю
+    await state.clear()
+    await message.answer(
+        "✅ Ваше сообщение отправлено разработчикам. Мы свяжемся с вами в ближайшее время.",
+        reply_markup=main_menu_keyboard()
+    )
 
 # ===================== СЦЕНАРИЙ ТЕХНИЧЕСКОЕ ЗАДАНИЕ =====================
 @dp.message(lambda msg: msg.text == "📋 Техническое задание")
@@ -1072,10 +1273,6 @@ async def handle_free_text(message: types.Message, state: FSMContext):
         await state.set_state(StrategyStates.has_company)
         await message.answer("Стратегия для строительного бизнеса. У вас уже есть ООО или ИП? (да/нет)", reply_markup=nav_keyboard())
         return
-    if any(w in text for w in ["бизнес план", "окупаемость", "доходы расходы", "инвестиции", "конно-спортивный"]):
-        await state.set_state(BPSportsStates.infrastructure)
-        await message.answer("Бизнес-план. У вас есть земля и инфраструктура? (да/нет)", reply_markup=nav_keyboard())
-        return
     await message.answer("Выберите услугу в меню или опишите задачу подробнее.", reply_markup=main_menu_keyboard())
 
 # ===================== ДОПОЛНИТЕЛЬНОЕ СОГЛАШЕНИЕ =====================
@@ -1156,29 +1353,6 @@ async def strategy_sales(message: types.Message, state: FSMContext):
         "Срочные задачи": data.get("urgent_tasks", "—"),
         "Система продаж": data.get("need_sales", "—")
     }, price_override=6800)
-
-# ===================== БИЗНЕС-ПЛАН (КОННЫЙ СПОРТ) =====================
-@dp.message(BPSportsStates.infrastructure)
-async def bp_infrastructure(message: types.Message, state: FSMContext):
-    await state.update_data(infrastructure=message.text)
-    await state.set_state(BPSportsStates.scale)
-    await message.answer("Какой масштаб мероприятий? (локальные, региональные, международные)", reply_markup=nav_keyboard())
-
-@dp.message(BPSportsStates.scale)
-async def bp_scale(message: types.Message, state: FSMContext):
-    await state.update_data(scale=message.text)
-    await state.set_state(BPSportsStates.data_available)
-    await message.answer("Есть ли данные по доходам (взносы, билеты) или всё нужно прогнозировать?", reply_markup=nav_keyboard())
-
-@dp.message(BPSportsStates.data_available)
-async def bp_data(message: types.Message, state: FSMContext):
-    await state.update_data(data_available=message.text)
-    data = await state.get_data()
-    await finalize_order(message, state, "Бизнес-план конный спорт", {
-        "Инфраструктура": data.get("infrastructure", "—"),
-        "Масштаб": data.get("scale", "—"),
-        "Данные": data.get("data_available", "—")
-    }, price_override=6500)
 
 # ===================== ЮРИДИЧЕСКАЯ ДОРАБОТКА ДОГОВОРОВ =====================
 @dp.message(LegalDocStates.contract_types)
