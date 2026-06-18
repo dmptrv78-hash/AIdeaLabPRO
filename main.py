@@ -27,8 +27,21 @@ MANAGER_GROUP_ID = os.getenv("MANAGER_GROUP_ID", "-1001234567890")
 ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "123456789").split(',')))
 
 storage = MemoryStorage()
-bot = Bot(token="8802501314:AAG0L8mrwSTNUqhrsHWIWGarw8QlZgtJXGQ")
+
+print("1. Импорты выполнены")
+print("2. Начинаем создание бота...")
+try:
+    bot = Bot(token=BOT_TOKEN)
+    print("3. Бот создан успешно")
+except Exception as e:
+    print(f"❌ Ошибка при создании бота: {e}")
+    import traceback
+    traceback.print_exc()
+    raise
+
+print("4. Создаём диспетчер...")
 dp = Dispatcher(storage=storage)
+print("5. Диспетчер создан")
 
 # ===================== БАЗА ДАННЫХ =====================
 from sqlalchemy import Column, Integer, String, Text, Float, DateTime, select
