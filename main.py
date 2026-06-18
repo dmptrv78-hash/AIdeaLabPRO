@@ -12,7 +12,7 @@ import random
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from pathlib import Path   # <-- для абсолютного пути к БД
+from pathlib import Path
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
@@ -70,7 +70,7 @@ class User(Base):
     username = Column(String, nullable=True)
     full_name = Column(String, nullable=True)
     phone = Column(String, nullable=True)
-    email = Column(String, nullable=True)
+    email = Column(String, nullable=True)   # <-- добавлено
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 class Order(Base):
@@ -92,10 +92,20 @@ class OrderFile(Base):
     file_path = Column(String, nullable=False)
     uploaded_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+# ===================== ИНИЦИАЛИЗАЦИЯ БД + ДОБАВЛЕНИЕ СТОЛБЦА EMAIL =====================
 async def init_db():
     try:
         async with engine.begin() as conn:
+            # Создаём таблицы, если их нет
             await conn.run_sync(Base.metadata.create_all)
+
+            # Проверяем наличие столбца email в таблице users
+            # Используем PRAGMA table_info для SQLite
+            rows = await conn.execute("PRAGMA table_info(users)")
+            columns = [row[1] for row in rows]  # row[1] - имя столбца
+            if 'email' not in columns:
+                await conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
+                print("✅ Столбец email добавлен в таблицу users")
         print("✅ База данных инициализирована")
     except Exception as e:
         print(f"❌ Ошибка инициализации БД: {e}")
@@ -304,7 +314,7 @@ class StrategyStates(StatesGroup):
 class BPSportsStates(StatesGroup):
     infrastructure, scale, data_available, confirm = [State() for _ in range(4)]
 
-class CommonStates(StatesGroup):
+class CommonStates(StatesGroup):   # <-- состояние для запроса email
     ask_email = State()
 
 # ===================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====================
@@ -330,7 +340,6 @@ async def finalize_order(message: types.Message, state: FSMContext, service_name
         send_email(manager_email, subject, body)
     
     await message.answer(summary)
-    # Временно отключаем отправку счёта
     await message.answer("💳 Оплата временно отключена для тестирования. Заявка принята!")
     await state.clear()
 
