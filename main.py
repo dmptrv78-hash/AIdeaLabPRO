@@ -1,6 +1,7 @@
+
 # ============================================================
 # AIdea Lab PRO – Telegram бот для бизнес-документов
-# Версия 4.0 (финальная сборка с отключёнными платежами)
+# Версия 4.1 – с email-уведомлениями
 # ============================================================
 
 import asyncio
@@ -9,6 +10,10 @@ import os
 import json
 import datetime
 import random
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -60,6 +65,7 @@ class User(Base):
     username = Column(String, nullable=True)
     full_name = Column(String, nullable=True)
     phone = Column(String, nullable=True)
+    email = Column(String, nullable=True)   # <-- добавлено
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 class Order(Base):
@@ -168,6 +174,31 @@ async def notify_managers(text):
     except Exception:
         pass
 
+# ===================== EMAIL =====================
+def send_email(to_email, subject, body):
+    try:
+        smtp_server = os.getenv("SMTP_SERVER")
+        smtp_port = int(os.getenv("SMTP_PORT", 465))
+        smtp_login = os.getenv("SMTP_LOGIN")
+        smtp_password = os.getenv("SMTP_PASSWORD")
+        if not all([smtp_server, smtp_login, smtp_password]):
+            print("SMTP не настроен")
+            return False
+        
+        msg = MIMEMultipart()
+        msg['From'] = smtp_login
+        msg['To'] = to_email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain', 'utf-8'))
+        
+        with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
+            server.login(smtp_login, smtp_password)
+            server.sendmail(smtp_login, [to_email], msg.as_string())
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка отправки email: {e}")
+        return False
+
 # ===================== ОПЛАТА (временно отключена) =====================
 class PaymentStates(StatesGroup):
     waiting_for_payment = State()
@@ -198,10 +229,6 @@ def calculate_price(service, data=None):
             if p > 10:
                 price += (p - 10) * 200
     return int(price)
-
-# Функция send_invoice временно отключена – платежи не используются
-# async def send_invoice(...):
-#     pass
 
 # ===================== КЛАВИАТУРЫ =====================
 def main_menu_keyboard():
@@ -265,6 +292,9 @@ class StrategyStates(StatesGroup):
 class BPSportsStates(StatesGroup):
     infrastructure, scale, data_available, confirm = [State() for _ in range(4)]
 
+class CommonStates(StatesGroup):   # <-- новое состояние для запроса email
+    ask_email = State()
+
 # ===================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====================
 async def finalize_order(message: types.Message, state: FSMContext, service_name: str, fields: dict, price_override=None):
     data = await state.get_data()
@@ -272,14 +302,23 @@ async def finalize_order(message: types.Message, state: FSMContext, service_name
     price = price_override if price_override is not None else calculate_price(service_name, data)
     order_id = await save_order(user.telegram_id, service_name, json.dumps(data, ensure_ascii=False), price)
     add_lead_to_gs({"name": data.get("name", ""), "phone": data.get("phone", ""), "service": service_name, **data})
-    await notify_managers(f"🔔 Новая заявка #{order_id}\nУслуга: {service_name}\nКлиент: @{message.from_user.username}\nДанные: {json.dumps(data, ensure_ascii=False)}")
+    
     summary = f"📋 {service_name}\n\n"
     for key, label in fields.items():
         summary += f"{label}: {data.get(key, '—')}\n"
     summary += f"\n💰 Стоимость: {price} руб."
+    
+    await notify_managers(f"🔔 Новая заявка #{order_id}\nУслуга: {service_name}\nКлиент: @{message.from_user.username}\nДанные: {json.dumps(data, ensure_ascii=False)}")
+    
+    # Отправка email менеджеру
+    manager_email = os.getenv("MANAGER_EMAIL")
+    if manager_email:
+        subject = f"🔔 Новая заявка #{order_id}"
+        body = f"Услуга: {service_name}\nКлиент: {user.full_name or user.username}\nТелефон: {user.phone or 'не указан'}\nEmail: {user.email or 'не указан'}\n\nДанные заявки:\n{summary}\n\nTelegram: @{message.from_user.username}\nID: {message.from_user.id}"
+        send_email(manager_email, subject, body)
+    
     await message.answer(summary)
     # Временно отключаем отправку счёта
-    # await send_invoice(message.chat.id, service_name, f"Заказ #{order_id}", price, order_id)
     await message.answer("💳 Оплата временно отключена для тестирования. Заявка принята!")
     await state.clear()
 
@@ -287,8 +326,27 @@ async def finalize_order(message: types.Message, state: FSMContext, service_name
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
-    await get_or_create_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
-    await message.answer("Добро пожаловать в AIdea Lab PRO!\n\nЯ помогу вам подготовить документы для бизнеса. Выберите услугу:", reply_markup=main_menu_keyboard())
+    user = await get_or_create_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
+    if not user.email:
+        await state.set_state(CommonStates.ask_email)
+        await message.answer("Пожалуйста, укажите ваш email для связи (на него придёт подтверждение заявки):")
+        return
+    await message.answer("Добро пожаловать в AIdea Lab PRO!\n\nВыберите услугу:", reply_markup=main_menu_keyboard())
+
+@dp.message(CommonStates.ask_email)
+async def process_email(message: types.Message, state: FSMContext):
+    email = message.text.strip()
+    if "@" not in email or "." not in email:
+        await message.answer("Введите корректный email (например, name@domain.com)")
+        return
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
+        user = user.scalar_one_or_none()
+        if user:
+            user.email = email
+            await session.commit()
+    await state.clear()
+    await message.answer(f"✅ Email {email} сохранён! Теперь выберите услугу:", reply_markup=main_menu_keyboard())
 
 @dp.message(lambda msg: msg.text == "🏠 Главное меню")
 async def go_home(message: types.Message, state: FSMContext):
@@ -1076,7 +1134,7 @@ async def legal_requirements(message: types.Message, state: FSMContext):
         "Требования": data.get("requirements", "—")
     }, price_override=6500)
 
-# ===================== ЗАПУСК БОТА =====================
+# ===================== ЗАПУСК БОТА (webhook) =====================
 async def main():
     await init_db()
     # await dp.start_polling(bot)   # отключено для webhook
