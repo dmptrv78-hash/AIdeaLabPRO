@@ -3,3 +3,4 @@ sqlalchemy
 aiosqlite
 python-dotenv
 flask
+pydantic==1.10.15
