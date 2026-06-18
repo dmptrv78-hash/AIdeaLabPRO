@@ -1,6 +1,6 @@
 # ============================================================
 # AIdea Lab PRO – Telegram бот для бизнес-документов
-# Версия 4.2 – с абсолютным путём к БД и email-уведомлениями
+# Версия 4.3 – исправлено автоматическое добавление email
 # ============================================================
 
 import asyncio
@@ -70,7 +70,7 @@ class User(Base):
     username = Column(String, nullable=True)
     full_name = Column(String, nullable=True)
     phone = Column(String, nullable=True)
-    email = Column(String, nullable=True)   # <-- добавлено
+    email = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 class Order(Base):
@@ -92,20 +92,21 @@ class OrderFile(Base):
     file_path = Column(String, nullable=False)
     uploaded_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-# ===================== ИНИЦИАЛИЗАЦИЯ БД + ДОБАВЛЕНИЕ СТОЛБЦА EMAIL =====================
+# ===================== ИНИЦИАЛИЗАЦИЯ БД =====================
 async def init_db():
     try:
         async with engine.begin() as conn:
             # Создаём таблицы, если их нет
             await conn.run_sync(Base.metadata.create_all)
-
-            # Проверяем наличие столбца email в таблице users
-            # Используем PRAGMA table_info для SQLite
-            rows = await conn.execute("PRAGMA table_info(users)")
-            columns = [row[1] for row in rows]  # row[1] - имя столбца
-            if 'email' not in columns:
+            # Пытаемся добавить столбец email, если его нет
+            try:
                 await conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
                 print("✅ Столбец email добавлен в таблицу users")
+            except Exception as e:
+                if "duplicate column name" in str(e).lower():
+                    print("ℹ️ Столбец email уже существует")
+                else:
+                    raise
         print("✅ База данных инициализирована")
     except Exception as e:
         print(f"❌ Ошибка инициализации БД: {e}")
@@ -314,7 +315,7 @@ class StrategyStates(StatesGroup):
 class BPSportsStates(StatesGroup):
     infrastructure, scale, data_available, confirm = [State() for _ in range(4)]
 
-class CommonStates(StatesGroup):   # <-- состояние для запроса email
+class CommonStates(StatesGroup):
     ask_email = State()
 
 # ===================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====================
