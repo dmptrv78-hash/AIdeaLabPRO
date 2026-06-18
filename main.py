@@ -1,6 +1,6 @@
 # ============================================================
 # AIdea Lab PRO – Telegram бот для бизнес-документов
-# Версия 4.6 – пропуск email + юридическое согласие
+# Версия 4.7 – исправлена ошибка инициализации БД
 # ============================================================
 
 import asyncio
@@ -93,17 +93,18 @@ class OrderFile(Base):
     file_path = Column(String, nullable=False)
     uploaded_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-# ===================== ИНИЦИАЛИЗАЦИЯ БД =====================
+# ===================== ИНИЦИАЛИЗАЦИЯ БД (ИСПРАВЛЕНО) =====================
 async def init_db():
     try:
+        # 1. Создаём таблицы, если их нет
         async with engine.begin() as conn:
-            # Создаём таблицы, если их нет
             await conn.run_sync(Base.metadata.create_all)
-            # Добавляем столбцы, если их нет
+
+        # 2. Добавляем столбцы в отдельной транзакции
+        async with engine.begin() as conn:
             for col_name, col_type in [("email", "TEXT"), ("consent_given", "BOOLEAN DEFAULT 0")]:
                 try:
                     await conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"))
-                    await conn.commit()
                     print(f"✅ Столбец {col_name} добавлен")
                 except Exception as e:
                     if "duplicate column name" in str(e).lower():
