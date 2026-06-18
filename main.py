@@ -1,6 +1,6 @@
 # ============================================================
 # AIdea Lab PRO – Telegram бот для бизнес-документов
-# Версия 4.0 (финальная сборка)
+# Версия 4.0 (финальная сборка с отключёнными платежами)
 # ============================================================
 
 import asyncio
@@ -17,7 +17,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
     ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove,
     InlineKeyboardMarkup, InlineKeyboardButton,
-    LabeledPrice, PreCheckoutQuery, SuccessfulPayment
+    # LabeledPrice, PreCheckoutQuery, SuccessfulPayment  # временно отключены
 )
 
 # ===================== КОНФИГУРАЦИЯ =====================
@@ -168,7 +168,7 @@ async def notify_managers(text):
     except Exception:
         pass
 
-# ===================== ОПЛАТА =====================
+# ===================== ОПЛАТА (временно отключена) =====================
 class PaymentStates(StatesGroup):
     waiting_for_payment = State()
 
@@ -199,30 +199,9 @@ def calculate_price(service, data=None):
                 price += (p - 10) * 200
     return int(price)
 
-async def send_invoice(chat_id, title, description, price, order_id):
-    prices = [LabeledPrice(label="Оплата услуг", amount=int(price * 100))]
-    await bot.send_invoice(
-        chat_id=chat_id,
-        title=title,
-        description=description,
-        provider_token=PROVIDER_TOKEN,
-        currency="RUB",
-        prices=prices,
-        start_parameter="payment",
-        payload=str(order_id)
-    )
-
-@dp.pre_checkout_query()
-async def pre_checkout(query: PreCheckoutQuery):
-    await query.answer(ok=True)
-
-@dp.message(SuccessfulPayment)
-async def process_payment(message: types.Message, state: FSMContext):
-    payload = message.successful_payment.invoice_payload
-    order_id = int(payload)
-    await update_order_status(order_id, "PAID")
-    await message.answer("✅ Оплата прошла! Мы начинаем работу.")
-    await notify_managers(f"💰 Оплачен заказ #{order_id} от @{message.from_user.username}")
+# Функция send_invoice временно отключена – платежи не используются
+# async def send_invoice(...):
+#     pass
 
 # ===================== КЛАВИАТУРЫ =====================
 def main_menu_keyboard():
@@ -299,7 +278,9 @@ async def finalize_order(message: types.Message, state: FSMContext, service_name
         summary += f"{label}: {data.get(key, '—')}\n"
     summary += f"\n💰 Стоимость: {price} руб."
     await message.answer(summary)
-    await send_invoice(message.chat.id, service_name, f"Заказ #{order_id}", price, order_id)
+    # Временно отключаем отправку счёта
+    # await send_invoice(message.chat.id, service_name, f"Заказ #{order_id}", price, order_id)
+    await message.answer("💳 Оплата временно отключена для тестирования. Заявка принята!")
     await state.clear()
 
 # ===================== ГЛОБАЛЬНЫЕ ОБРАБОТЧИКИ =====================
@@ -1099,6 +1080,7 @@ async def legal_requirements(message: types.Message, state: FSMContext):
 async def main():
     await init_db()
     # await dp.start_polling(bot)   # отключено для webhook
+    print("✅ Бот запущен в режиме webhook, polling отключён")
 
 if __name__ == "__main__":
     asyncio.run(main())
