@@ -48,7 +48,7 @@ async def on_startup(app):
 async def on_shutdown(app):
     """Действия при остановке приложения"""
     logger.info("Удаление вебхука...")
-    await bot.delete_webhook()
+    await bot.delete_webhook() #
     logger.info("Закрытие сессии бота...")
     await bot.session.close()
     logger.info("✅ Остановка завершена")
