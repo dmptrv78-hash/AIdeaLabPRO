@@ -1,6 +1,6 @@
 # ============================================================
 # AIdea Lab PRO – Telegram бот для бизнес-документов
-# Версия 4.4 – исправлена обработка "пропустить"
+# Версия 4.6 – пропуск email + юридическое согласие
 # ============================================================
 
 import asyncio
@@ -49,7 +49,7 @@ dp = Dispatcher(storage=storage)
 print("5. Диспетчер создан")
 
 # ===================== БАЗА ДАННЫХ (абсолютный путь) =====================
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime, select, text
+from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Boolean, select, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 
@@ -71,6 +71,7 @@ class User(Base):
     full_name = Column(String, nullable=True)
     phone = Column(String, nullable=True)
     email = Column(String, nullable=True)
+    consent_given = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 class Order(Base):
@@ -98,16 +99,17 @@ async def init_db():
         async with engine.begin() as conn:
             # Создаём таблицы, если их нет
             await conn.run_sync(Base.metadata.create_all)
-            # Пытаемся добавить столбец email, если его нет
-            try:
-                await conn.execute(text("ALTER TABLE users ADD COLUMN email TEXT"))
-                await conn.commit()
-                print("✅ Столбец email добавлен в таблицу users")
-            except Exception as e:
-                if "duplicate column name" in str(e).lower():
-                    print("ℹ️ Столбец email уже существует")
-                else:
-                    raise
+            # Добавляем столбцы, если их нет
+            for col_name, col_type in [("email", "TEXT"), ("consent_given", "BOOLEAN DEFAULT 0")]:
+                try:
+                    await conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"))
+                    await conn.commit()
+                    print(f"✅ Столбец {col_name} добавлен")
+                except Exception as e:
+                    if "duplicate column name" in str(e).lower():
+                        print(f"ℹ️ Столбец {col_name} уже существует")
+                    else:
+                        raise
         print("✅ База данных инициализирована")
     except Exception as e:
         print(f"❌ Ошибка инициализации БД: {e}")
@@ -317,6 +319,7 @@ class BPSportsStates(StatesGroup):
     infrastructure, scale, data_available, confirm = [State() for _ in range(4)]
 
 class CommonStates(StatesGroup):
+    ask_consent = State()
     ask_email = State()
 
 # ===================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====================
@@ -350,26 +353,78 @@ async def finalize_order(message: types.Message, state: FSMContext, service_name
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     user = await get_or_create_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
-    if not user.email:
+    # Если согласие ещё не получено – спрашиваем
+    if not user.consent_given:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Согласен", callback_data="accept_consent")],
+            [InlineKeyboardButton(text="❌ Не согласен", callback_data="decline_consent")]
+        ])
+        await message.answer(
+            "Для продолжения работы с ботом необходимо ваше согласие на обработку персональных данных. "
+            "Мы собираем только имя, телефон и email для связи по вашему заказу. "
+            "Подробнее: [Политика конфиденциальности](ссылка) и [Оферта](ссылка).\n\n"
+            "Нажимая «Согласен», вы подтверждаете, что ознакомлены и согласны с условиями.",
+            reply_markup=kb,
+            parse_mode="Markdown"
+        )
+        await state.set_state(CommonStates.ask_consent)
+        return
+    # Если согласие есть, но email не указан – запрашиваем email (с возможностью пропуска)
+    if user.email is None:
         await state.set_state(CommonStates.ask_email)
-        await message.answer("Пожалуйста, укажите ваш email для связи (на него придёт подтверждение заявки):")
+        await message.answer(
+            "Пожалуйста, укажите ваш email для связи (на него придёт подтверждение заявки).\n"
+            "Если не хотите указывать, нажмите 'Пропустить' — мы свяжемся с вами через Telegram.",
+            reply_markup=nav_keyboard()
+        )
         return
     await message.answer("Добро пожаловать в AIdea Lab PRO!\n\nВыберите услугу:", reply_markup=main_menu_keyboard())
 
+@dp.callback_query(lambda c: c.data == "accept_consent")
+async def accept_consent(callback: types.CallbackQuery, state: FSMContext):
+    async with AsyncSessionLocal() as session:
+        user = await session.execute(select(User).where(User.telegram_id == callback.from_user.id))
+        user = user.scalar_one_or_none()
+        if user:
+            user.consent_given = True
+            await session.commit()
+    await callback.message.edit_text("✅ Спасибо! Теперь укажите ваш email для связи.\nЕсли не хотите, нажмите 'Пропустить'.")
+    await state.set_state(CommonStates.ask_email)
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "decline_consent")
+async def decline_consent(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.edit_text("❌ Без согласия мы не можем обрабатывать ваши данные. Если передумаете, напишите /start заново.")
+    await state.clear()
+    await callback.answer()
+
 @dp.message(CommonStates.ask_email)
 async def process_email(message: types.Message, state: FSMContext):
-    email = message.text.strip()
-    if "@" not in email or "." not in email:
-        await message.answer("Введите корректный email (например, name@domain.com)")
+    text = message.text.strip()
+    # Если пользователь нажимает кнопку "Пропустить" или пишет "пропустить"
+    if "пропустить" in text.lower() or text == "⏭ Пропустить":
+        async with AsyncSessionLocal() as session:
+            user = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
+            user = user.scalar_one_or_none()
+            if user:
+                user.email = None
+                await session.commit()
+        await state.clear()
+        await message.answer("✅ Email пропущен. Для связи мы будем использовать ваш Telegram. Теперь выберите услугу:", reply_markup=main_menu_keyboard())
         return
+    # Иначе проверяем корректность email
+    if "@" not in text or "." not in text:
+        await message.answer("Введите корректный email (например, name@domain.com) или нажмите 'Пропустить'.", reply_markup=nav_keyboard())
+        return
+    # Сохраняем email
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
         user = user.scalar_one_or_none()
         if user:
-            user.email = email
+            user.email = text
             await session.commit()
     await state.clear()
-    await message.answer(f"✅ Email {email} сохранён! Теперь выберите услугу:", reply_markup=main_menu_keyboard())
+    await message.answer(f"✅ Email {text} сохранён! Теперь выберите услугу:", reply_markup=main_menu_keyboard())
 
 @dp.message(lambda msg: msg.text == "🏠 Главное меню")
 async def go_home(message: types.Message, state: FSMContext):
