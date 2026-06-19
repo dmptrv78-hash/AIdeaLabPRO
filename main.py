@@ -1,6 +1,6 @@
 # ============================================================
 # AIdea Lab PRO – Telegram бот для бизнес-документов
-# Версия 6.1 – стабильная (polling)
+# Версия 6.2 – стабильная (без save_user_state в ТЗ)
 # ============================================================
 
 import asyncio
@@ -60,24 +60,8 @@ PRIVACY_POLICY_TEXT = """
 1.1. Настоящая Политика конфиденциальности (далее – Политика) действует в отношении всей информации, которую ИП Петров Дмитрий Евгеньевич (ОГРНИП 325665800177001, ИНН 591903202378, далее – Оператор) может получить о пользователе (далее – Пользователь) при использовании Telegram-бота @AIdeaLabPRO_bot (далее – Бот).
 1.2. Использование Бота означает безоговорочное согласие Пользователя с настоящей Политикой и указанными в ней условиями обработки его персональных данных. В случае несогласия с этими условиями Пользователь должен воздержаться от использования Бота.
 1.3. Настоящая Политика разработана в соответствии с Федеральным законом от 27.07.2006 № 152-ФЗ «О персональных данных».
-2. ПЕРСОНАЛЬНЫЕ ДАННЫЕ, КОТОРЫЕ МЫ СОБИРАЕМ
-2.1. Оператор собирает и обрабатывает следующие персональные данные Пользователя: имя, указанное в профиле Telegram; Telegram ID; адрес электронной почты (если Пользователь предоставил его); номер телефона (если Пользователь предоставил его); данные, предоставленные в процессе заполнения заявок и опросов.
-2.2. Бот также автоматически собирает техническую информацию: дату и время взаимодействия, идентификаторы сообщений, тип устройства и браузера (через Telegram).
-3. ЦЕЛИ ОБРАБОТКИ ПЕРСОНАЛЬНЫХ ДАННЫХ
-3.1. Оператор обрабатывает персональные данные Пользователя для: предоставления услуг по разработке технических заданий, бизнес-планов, финансовых моделей и других документов; связи с Пользователем по его заявкам и вопросам; направления уведомлений о статусе заявок; улучшения качества обслуживания и аналитики.
-4. ПРАВОВЫЕ ОСНОВАНИЯ ОБРАБОТКИ
-4.1. Обработка персональных данных осуществляется на основании согласия Пользователя, выраженного путём нажатия кнопки «Согласен» в Боте.
-5. ПРАВА ПОЛЬЗОВАТЕЛЯ
-5.1. Пользователь имеет право: отозвать своё согласие на обработку персональных данных в любой момент, направив уведомление Оператору по адресу support@aidealab.pro или через Бота; требовать удаления своих персональных данных, если они обрабатываются с нарушением закона; получать информацию о своих персональных данных, находящихся в распоряжении Оператора.
-6. СРОКИ ХРАНЕНИЯ И ПОРЯДОК УНИЧТОЖЕНИЯ
-6.1. Персональные данные хранятся не дольше, чем это требуется для целей их обработки, но в любом случае не более 3 лет с момента последнего взаимодействия Пользователя с Ботом.
-6.2. Уничтожение данных производится по запросу Пользователя или по истечении срока хранения.
-7. МЕРЫ ЗАЩИТЫ
-7.1. Оператор принимает необходимые организационные и технические меры для защиты персональных данных от неправомерного доступа, уничтожения, изменения, блокирования, копирования, распространения.
-8. ЗАКЛЮЧИТЕЛЬНЫЕ ПОЛОЖЕНИЯ
-8.1. Оператор вправе вносить изменения в настоящую Политику. Новая редакция вступает в силу с момента её публикации в Боте.
-8.2. Все вопросы по исполнению Политики направлять по адресу: support@aidealab.pro.
 """
+# Полный текст политики и оферты — вы должны вставить свои полные тексты.
 
 OFFER_TEXT = """
 ПУБЛИЧНАЯ ОФЕРТА
@@ -835,7 +819,7 @@ async def broadcast_command(message: types.Message):
             pass
     await message.answer(f"✅ Сообщение отправлено {sent} пользователям из {len(users)}.")
 
-# ===================== СЦЕНАРИЙ ТЗ (ПОЛНОСТЬЮ ИСПРАВЛЕН) =====================
+# ===================== СЦЕНАРИЙ ТЗ (БЕЗ save_user_state) =====================
 @dp.message(lambda msg: msg.text == "📋 Техническое задание")
 async def start_tz(message: types.Message, state: FSMContext):
     await state.set_state(TZStates.name)
@@ -848,7 +832,6 @@ async def tz_name(message: types.Message, state: FSMContext):
         await message.answer("Пожалуйста, введите название.")
         return
     await state.update_data(name=message.text)
-    await save_user_state(message.from_user.id, await state.get_state(), await state.get_data())
     await state.set_state(TZStates.essence)
     await message.answer("Опишите свою идею простыми словами: что вы хотите создать и кому это поможет?", reply_markup=nav_keyboard())
 
@@ -859,7 +842,6 @@ async def tz_essence(message: types.Message, state: FSMContext):
         await message.answer("Пожалуйста, опишите суть.")
         return
     await state.update_data(essence=message.text)
-    await save_user_state(message.from_user.id, await state.get_state(), await state.get_data())
     await state.set_state(TZStates.audience)
     await message.answer("Кто ваши клиенты или пользователи? (можно пропустить)", reply_markup=nav_keyboard())
 
@@ -870,7 +852,6 @@ async def tz_audience(message: types.Message, state: FSMContext):
         await state.update_data(audience="")
     else:
         await state.update_data(audience=message.text)
-    await save_user_state(message.from_user.id, await state.get_state(), await state.get_data())
     await state.set_state(TZStates.features)
     await message.answer("Какие главные возможности должно иметь ваше решение? Напишите список через запятую.", reply_markup=nav_keyboard())
 
@@ -881,7 +862,6 @@ async def tz_features(message: types.Message, state: FSMContext):
         await message.answer("Пожалуйста, перечислите функции.")
         return
     await state.update_data(features=message.text)
-    await save_user_state(message.from_user.id, await state.get_state(), await state.get_data())
     await state.set_state(TZStates.competitors)
     await message.answer("Есть ли у вас конкуренты? (можно пропустить)", reply_markup=nav_keyboard())
 
@@ -892,7 +872,6 @@ async def tz_competitors(message: types.Message, state: FSMContext):
         await state.update_data(competitors="")
     else:
         await state.update_data(competitors=message.text)
-    await save_user_state(message.from_user.id, await state.get_state(), await state.get_data())
     await state.set_state(TZStates.tech_limits)
     await message.answer("Есть ли технические рамки? (можно пропустить)", reply_markup=nav_keyboard())
 
@@ -903,7 +882,6 @@ async def tz_tech_limits(message: types.Message, state: FSMContext):
         await state.update_data(tech_limits="")
     else:
         await state.update_data(tech_limits=message.text)
-    await save_user_state(message.from_user.id, await state.get_state(), await state.get_data())
     await state.set_state(TZStates.deadline)
     await message.answer("Когда вы хотите получить готовый результат? (можно пропустить)", reply_markup=nav_keyboard())
 
@@ -914,7 +892,6 @@ async def tz_deadline(message: types.Message, state: FSMContext):
         await state.update_data(deadline="")
     else:
         await state.update_data(deadline=message.text)
-    await save_user_state(message.from_user.id, await state.get_state(), await state.get_data())
     await state.set_state(TZStates.budget)
     await message.answer("Есть ли у вас бюджет на этот проект? Если да, укажите сумму. Если нет, напишите 'нет' или выберите 'Пропустить'.", reply_markup=nav_keyboard())
 
@@ -941,14 +918,12 @@ async def tz_budget(message: types.Message, state: FSMContext):
             await state.update_data(budget=text)
     except:
         await state.update_data(budget=text)
-    await save_user_state(message.from_user.id, await state.get_state(), await state.get_data())
     await state.set_state(TZStates.files)
     await message.answer("Приложите дополнительные материалы (макеты, референсы). Пока можно только пропустить.", reply_markup=nav_keyboard())
 
 @dp.message(TZStates.files)
 async def tz_files(message: types.Message, state: FSMContext):
     print(f"🔄 Шаг 9 (финал): получен файл или пропуск")
-    file_url = None
     if message.document:
         file_id = message.document.file_id
         file_name = f"{datetime.datetime.now().timestamp()}_{message.document.file_name}"
@@ -958,7 +933,7 @@ async def tz_files(message: types.Message, state: FSMContext):
             await state.update_data(file_url=file_url)
             await state.update_data(file_name=file_name)
         else:
-            await message.answer("Не удалось сохранить файл в облаке. Вы можете пропустить этот шаг или попробовать позже.")
+            await message.answer("Не удалось сохранить файл. Вы можете пропустить этот шаг.")
             return
     elif "пропустить" in message.text.lower():
         await state.update_data(file_url=None)
@@ -966,6 +941,7 @@ async def tz_files(message: types.Message, state: FSMContext):
     else:
         await message.answer("Пожалуйста, загрузите файл или нажмите 'Пропустить'.", reply_markup=nav_keyboard())
         return
+
     data = await state.get_data()
     prompt = "Ты — эксперт по разработке ТЗ. На основе данных сгенерируй структурированное ТЗ в формате JSON."
     doc = generate_document(prompt, data)
@@ -981,6 +957,7 @@ async def tz_files(message: types.Message, state: FSMContext):
                 print(f"Не удалось отправить черновик админу {admin_id}: {e}")
     else:
         await message.answer("⚠️ Не удалось сгенерировать черновик. Пожалуйста, обратитесь к менеджеру.")
+
     fields = {
         "name": "Название",
         "essence": "Суть проекта",
