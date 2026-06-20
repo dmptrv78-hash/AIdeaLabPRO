@@ -65,8 +65,6 @@ DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH}?check_same_thread=False"
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
-    pool_size=5,
-    max_overflow=10,
     pool_pre_ping=True,
 )
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
