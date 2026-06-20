@@ -1,6 +1,6 @@
 # ============================================================
 # AIdea Lab PRO – Telegram бот для бизнес-документов
-# Версия 6.2 – стабильная (без save_user_state в ТЗ)
+# Версия 7.0 – СТАБИЛЬНАЯ (polling с защитой от зависаний)
 # ============================================================
 
 import asyncio
@@ -13,11 +13,17 @@ import smtplib
 import base64
 import boto3
 import botocore
+import logging
+import signal
+import sys
+import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 from pathlib import Path
+from contextlib import asynccontextmanager
+from typing import Optional, Dict, Any
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
@@ -28,6 +34,31 @@ from aiogram.types import (
     ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove,
     InlineKeyboardMarkup, InlineKeyboardButton,
 )
+from aiogram.exceptions import (
+    TelegramNetworkError,
+    TelegramBadRequest,
+    TelegramRetryAfter,
+    TelegramServerError,
+)
+from aiohttp import ClientError, ClientTimeout
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log,
+)
+
+# ===================== НАСТРОЙКА ЛОГИРОВАНИЯ =====================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('bot.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # ===================== КОНФИГУРАЦИЯ =====================
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8802501314:AAG0L8mrwSTNUqhrsHWIWGarw8QlZgtJXGQ")
@@ -35,22 +66,117 @@ PROVIDER_TOKEN = os.getenv("PROVIDER_TOKEN", "TEST")
 ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "1636715304").split(',')))
 MANAGER_EMAIL = "dmptrv78@gmail.com"
 
+# Настройки для стабильности
+POLLING_TIMEOUT = 60  # секунд
+POLLING_INTERVAL = 0.5  # секунд между запросами
+MAX_RETRIES = 5
+BOT_SESSION_TIMEOUT = 120  # секунд
+
+# ===================== ИНИЦИАЛИЗАЦИЯ С ХРАНЕНИЕМ СОСТОЯНИЯ =====================
 storage = MemoryStorage()
 
-print("1. Импорты выполнены")
-print("2. Начинаем создание бота...")
-try:
-    bot = Bot(token=BOT_TOKEN)
-    print("3. Бот создан успешно")
-except Exception as e:
-    print(f"❌ Ошибка при создании бота: {e}")
-    import traceback
-    traceback.print_exc()
-    raise
+# Создаем бота с увеличенными таймаутами
+bot = Bot(
+    token=BOT_TOKEN,
+    timeout=BOT_SESSION_TIMEOUT,
+    parse_mode="HTML",
+)
 
-print("4. Создаём диспетчер...")
 dp = Dispatcher(storage=storage)
-print("5. Диспетчер создан")
+
+# ===================== БАЗА ДАННЫХ С ПУЛОМ СОЕДИНЕНИЙ =====================
+from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Boolean, select, func, text, Index
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.exc import SQLAlchemyError, OperationalError
+
+BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = BASE_DIR / "bot.db"
+DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH}?check_same_thread=False"
+
+# Настройки пула соединений
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=False,
+    pool_size=10,
+    max_overflow=20,
+    pool_pre_ping=True,  # Проверка соединения перед использованием
+    pool_recycle=3600,   # Пересоздание соединения через час
+)
+AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+Base = declarative_base()
+
+# ===================== МОДЕЛИ БАЗЫ ДАННЫХ =====================
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True)
+    telegram_id = Column(Integer, unique=True, nullable=False)
+    username = Column(String, nullable=True)
+    full_name = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    consent_given = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    last_activity = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    
+    __table_args__ = (
+        Index('idx_user_telegram_id', 'telegram_id'),
+        Index('idx_user_consent', 'consent_given'),
+        Index('idx_user_last_activity', 'last_activity'),
+    )
+
+class Order(Base):
+    __tablename__ = "orders"
+    id = Column(Integer, primary_key=True)
+    user_telegram_id = Column(Integer, nullable=False)
+    service = Column(String, nullable=False)
+    status = Column(String, default="NEW")
+    data = Column(Text, nullable=True)
+    price = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    
+    __table_args__ = (
+        Index('idx_order_user', 'user_telegram_id'),
+        Index('idx_order_status', 'status'),
+        Index('idx_order_created', 'created_at'),
+    )
+
+class OrderFile(Base):
+    __tablename__ = "order_files"
+    id = Column(Integer, primary_key=True)
+    order_id = Column(Integer, nullable=False)
+    file_name = Column(String, nullable=False)
+    file_url = Column(String, nullable=True)
+    file_type = Column(String, default="user_upload")
+    uploaded_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class UserState(Base):
+    __tablename__ = "user_states"
+    id = Column(Integer, primary_key=True)
+    user_telegram_id = Column(Integer, unique=True, nullable=False)
+    state = Column(String, nullable=True)
+    data = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+# ===================== ДЕКОРАТОР ДЛЯ ПОВТОРНЫХ ПОПЫТОК =====================
+def retry_on_db_error(func):
+    """Декоратор для повторных попыток при ошибках БД"""
+    async def wrapper(*args, **kwargs):
+        retries = 3
+        for attempt in range(retries):
+            try:
+                return await func(*args, **kwargs)
+            except (OperationalError, SQLAlchemyError) as e:
+                if attempt == retries - 1:
+                    logger.error(f"❌ Ошибка БД после {retries} попыток: {e}")
+                    raise
+                logger.warning(f"⚠️ Ошибка БД, попытка {attempt + 1}/{retries}: {e}")
+                await asyncio.sleep(2 ** attempt)
+            except Exception as e:
+                logger.error(f"❌ Неожиданная ошибка в {func.__name__}: {e}")
+                raise
+    return wrapper
 
 # ===================== ЮРИДИЧЕСКИЕ ТЕКСТЫ =====================
 PRIVACY_POLICY_TEXT = """
@@ -60,8 +186,24 @@ PRIVACY_POLICY_TEXT = """
 1.1. Настоящая Политика конфиденциальности (далее – Политика) действует в отношении всей информации, которую ИП Петров Дмитрий Евгеньевич (ОГРНИП 325665800177001, ИНН 591903202378, далее – Оператор) может получить о пользователе (далее – Пользователь) при использовании Telegram-бота @AIdeaLabPRO_bot (далее – Бот).
 1.2. Использование Бота означает безоговорочное согласие Пользователя с настоящей Политикой и указанными в ней условиями обработки его персональных данных. В случае несогласия с этими условиями Пользователь должен воздержаться от использования Бота.
 1.3. Настоящая Политика разработана в соответствии с Федеральным законом от 27.07.2006 № 152-ФЗ «О персональных данных».
+2. ПЕРСОНАЛЬНЫЕ ДАННЫЕ, КОТОРЫЕ МЫ СОБИРАЕМ
+2.1. Оператор собирает и обрабатывает следующие персональные данные Пользователя: имя, указанное в профиле Telegram; Telegram ID; адрес электронной почты (если Пользователь предоставил его); номер телефона (если Пользователь предоставил его); данные, предоставленные в процессе заполнения заявок и опросов.
+2.2. Бот также автоматически собирает техническую информацию: дату и время взаимодействия, идентификаторы сообщений, тип устройства и браузера (через Telegram).
+3. ЦЕЛИ ОБРАБОТКИ ПЕРСОНАЛЬНЫХ ДАННЫХ
+3.1. Оператор обрабатывает персональные данные Пользователя для: предоставления услуг по разработке технических заданий, бизнес-планов, финансовых моделей и других документов; связи с Пользователем по его заявкам и вопросам; направления уведомлений о статусе заявок; улучшения качества обслуживания и аналитики.
+4. ПРАВОВЫЕ ОСНОВАНИЯ ОБРАБОТКИ
+4.1. Обработка персональных данных осуществляется на основании согласия Пользователя, выраженного путём нажатия кнопки «Согласен» в Боте.
+5. ПРАВА ПОЛЬЗОВАТЕЛЯ
+5.1. Пользователь имеет право: отозвать своё согласие на обработку персональных данных в любой момент, направив уведомление Оператору по адресу support@aidealab.pro или через Бота; требовать удаления своих персональных данных, если они обрабатываются с нарушением закона; получать информацию о своих персональных данных, находящихся в распоряжении Оператора.
+6. СРОКИ ХРАНЕНИЯ И ПОРЯДОК УНИЧТОЖЕНИЯ
+6.1. Персональные данные хранятся не дольше, чем это требуется для целей их обработки, но в любом случае не более 3 лет с момента последнего взаимодействия Пользователя с Ботом.
+6.2. Уничтожение данных производится по запросу Пользователя или по истечении срока хранения.
+7. МЕРЫ ЗАЩИТЫ
+7.1. Оператор принимает необходимые организационные и технические меры для защиты персональных данных от неправомерного доступа, уничтожения, изменения, блокирования, копирования, распространения.
+8. ЗАКЛЮЧИТЕЛЬНЫЕ ПОЛОЖЕНИЯ
+8.1. Оператор вправе вносить изменения в настоящую Политику. Новая редакция вступает в силу с момента её публикации в Боте.
+8.2. Все вопросы по исполнению Политики направлять по адресу: support@aidealab.pro.
 """
-# Полный текст политики и оферты — вы должны вставить свои полные тексты.
 
 OFFER_TEXT = """
 ПУБЛИЧНАЯ ОФЕРТА
@@ -119,100 +261,55 @@ OFFER_TEXT = """
 Реквизиты предоставляются по запросу. Для получения реквизитов обратитесь к менеджеру.
 """
 
-# ===================== БАЗА ДАННЫХ =====================
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Boolean, select, func, text
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker, declarative_base
-
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "bot.db"
-DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH}"
-print(f"📂 База данных будет создана по пути: {DB_PATH}")
-
-engine = create_async_engine(DATABASE_URL, echo=False)
-AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-Base = declarative_base()
-
-class User(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True)
-    telegram_id = Column(Integer, unique=True, nullable=False)
-    username = Column(String, nullable=True)
-    full_name = Column(String, nullable=True)
-    phone = Column(String, nullable=True)
-    email = Column(String, nullable=True)
-    consent_given = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-
-class Order(Base):
-    __tablename__ = "orders"
-    id = Column(Integer, primary_key=True)
-    user_telegram_id = Column(Integer, nullable=False)
-    service = Column(String, nullable=False)
-    status = Column(String, default="NEW")
-    data = Column(Text, nullable=True)
-    price = Column(Float, nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
-
-class OrderFile(Base):
-    __tablename__ = "order_files"
-    id = Column(Integer, primary_key=True)
-    order_id = Column(Integer, nullable=False)
-    file_name = Column(String, nullable=False)
-    file_url = Column(String, nullable=True)
-    file_type = Column(String, default="user_upload")
-    uploaded_at = Column(DateTime, default=datetime.datetime.utcnow)
-
-class Draft(Base):
-    __tablename__ = "drafts"
-    id = Column(Integer, primary_key=True)
-    user_telegram_id = Column(Integer, nullable=False)
-    service = Column(String, nullable=False)
-    draft_text = Column(Text, nullable=False)
-    data = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    status = Column(String, default="pending")
-    approved_by = Column(Integer, nullable=True)
-    approved_at = Column(DateTime, nullable=True)
-
-class UserState(Base):
-    __tablename__ = "user_states"
-    id = Column(Integer, primary_key=True)
-    user_telegram_id = Column(Integer, unique=True, nullable=False)
-    state = Column(String, nullable=True)
-    data = Column(Text, nullable=True)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
-
-# ===================== ИНИЦИАЛИЗАЦИЯ БД =====================
+# ===================== ФУНКЦИИ РАБОТЫ С БД =====================
+@retry_on_db_error
 async def init_db():
+    """Инициализация базы данных с повторными попытками"""
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        async with engine.begin() as conn:
-            for col_name, col_type in [("email", "TEXT"), ("consent_given", "BOOLEAN DEFAULT 0")]:
-                try:
-                    await conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"))
-                    print(f"✅ Столбец {col_name} добавлен")
-                except Exception as e:
-                    if "duplicate column name" in str(e).lower():
-                        print(f"ℹ️ Столбец {col_name} уже существует")
-                    else:
-                        raise
-        print("✅ База данных инициализирована")
+        logger.info("✅ База данных инициализирована")
     except Exception as e:
-        print(f"❌ Ошибка инициализации БД: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"❌ Ошибка инициализации БД: {e}")
         raise
 
-# ===================== РАБОТА С СОСТОЯНИЕМ =====================
+@retry_on_db_error
+async def get_or_create_user(telegram_id, username=None, full_name=None):
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await session.execute(
+                select(User).where(User.telegram_id == telegram_id)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                user = User(
+                    telegram_id=telegram_id,
+                    username=username,
+                    full_name=full_name,
+                    last_activity=datetime.datetime.utcnow()
+                )
+                session.add(user)
+                await session.commit()
+                logger.info(f"✅ Создан новый пользователь: {telegram_id}")
+            else:
+                # Обновляем активность
+                user.last_activity = datetime.datetime.utcnow()
+                await session.commit()
+            return user
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"❌ Ошибка в get_or_create_user: {e}")
+            raise
+
+@retry_on_db_error
 async def save_user_state(user_id, state, data):
     try:
         if data is None:
             data = {}
         async with AsyncSessionLocal() as session:
-            result = await session.execute(select(UserState).where(UserState.user_telegram_id == user_id))
+            result = await session.execute(
+                select(UserState).where(UserState.user_telegram_id == user_id)
+            )
             user_state = result.scalar_one_or_none()
             if user_state:
                 user_state.state = state
@@ -227,68 +324,89 @@ async def save_user_state(user_id, state, data):
                 session.add(user_state)
             await session.commit()
     except Exception as e:
-        print(f"❌ Ошибка сохранения состояния: {e}")
+        logger.error(f"❌ Ошибка сохранения состояния: {e}")
+        raise
 
+@retry_on_db_error
 async def get_user_state(user_id):
     try:
         async with AsyncSessionLocal() as session:
-            result = await session.execute(select(UserState).where(UserState.user_telegram_id == user_id))
+            result = await session.execute(
+                select(UserState).where(UserState.user_telegram_id == user_id)
+            )
             user_state = result.scalar_one_or_none()
             if user_state:
-                return user_state.state, json.loads(user_state.data)
+                try:
+                    data = json.loads(user_state.data) if user_state.data else {}
+                except:
+                    data = {}
+                return user_state.state, data
             return None, None
     except Exception as e:
-        print(f"❌ Ошибка получения состояния: {e}")
+        logger.error(f"❌ Ошибка получения состояния: {e}")
         return None, None
 
+@retry_on_db_error
 async def clear_user_state(user_id):
     try:
         async with AsyncSessionLocal() as session:
-            result = await session.execute(select(UserState).where(UserState.user_telegram_id == user_id))
+            result = await session.execute(
+                select(UserState).where(UserState.user_telegram_id == user_id)
+            )
             user_state = result.scalar_one_or_none()
             if user_state:
                 await session.delete(user_state)
                 await session.commit()
     except Exception as e:
-        print(f"❌ Ошибка удаления состояния: {e}")
+        logger.error(f"❌ Ошибка удаления состояния: {e}")
+        raise
 
-# ===================== ОСНОВНЫЕ ФУНКЦИИ =====================
-async def get_or_create_user(telegram_id, username=None, full_name=None):
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(select(User).where(User.telegram_id == telegram_id))
-        user = result.scalar_one_or_none()
-        if not user:
-            user = User(telegram_id=telegram_id, username=username, full_name=full_name)
-            session.add(user)
-            await session.commit()
-        return user
-
+@retry_on_db_error
 async def save_order(user_telegram_id, service, data_json, price=0):
     async with AsyncSessionLocal() as session:
-        order = Order(user_telegram_id=user_telegram_id, service=service, status="NEW", data=data_json, price=price)
-        session.add(order)
-        await session.commit()
-        return order.id
+        try:
+            order = Order(
+                user_telegram_id=user_telegram_id,
+                service=service,
+                status="NEW",
+                data=data_json,
+                price=price
+            )
+            session.add(order)
+            await session.commit()
+            return order.id
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"❌ Ошибка сохранения заказа: {e}")
+            raise
 
+@retry_on_db_error
 async def update_order_status(order_id, status, notify_user=True):
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(Order).where(Order.id == order_id))
-        order = result.scalar_one_or_none()
-        if order:
-            old_status = order.status
-            order.status = status
-            await session.commit()
-            if notify_user and old_status != status:
-                try:
-                    user = await get_or_create_user(order.user_telegram_id)
-                    if user:
-                        await bot.send_message(
-                            user.telegram_id,
-                            f"🔄 Статус вашей заявки #{order.id} изменился:\n{old_status} → {status}\n\nУслуга: {order.service}"
-                        )
-                except Exception as e:
-                    print(f"Не удалось уведомить клиента: {e}")
-            return True
+        try:
+            result = await session.execute(
+                select(Order).where(Order.id == order_id)
+            )
+            order = result.scalar_one_or_none()
+            if order:
+                old_status = order.status
+                order.status = status
+                await session.commit()
+                if notify_user and old_status != status:
+                    try:
+                        user = await get_or_create_user(order.user_telegram_id)
+                        if user:
+                            await bot.send_message(
+                                user.telegram_id,
+                                f"🔄 Статус вашей заявки #{order.id} изменился:\n{old_status} → {status}\n\nУслуга: {order.service}"
+                            )
+                    except Exception as e:
+                        logger.error(f"Не удалось уведомить клиента: {e}")
+                return True
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"❌ Ошибка обновления статуса: {e}")
+            raise
     return False
 
 # ===================== YANDEX OBJECT STORAGE =====================
@@ -297,7 +415,7 @@ def upload_to_yandex(file_data, file_name):
         access_key = os.getenv('YANDEX_ACCESS_KEY_ID')
         secret_key = os.getenv('YANDEX_SECRET_ACCESS_KEY')
         if not access_key or not secret_key:
-            print("❌ Не заданы ключи Yandex Object Storage")
+            logger.error("❌ Не заданы ключи Yandex Object Storage")
             return None
         s3 = boto3.client(
             's3',
@@ -314,29 +432,41 @@ def upload_to_yandex(file_data, file_name):
         )
         return f"https://{bucket}.storage.yandexcloud.net/{file_name}"
     except botocore.exceptions.NoCredentialsError:
-        print("❌ Нет учетных данных для Yandex Cloud")
+        logger.error("❌ Нет учетных данных для Yandex Cloud")
         return None
     except Exception as e:
-        print(f"❌ Ошибка загрузки в Yandex Cloud: {e}")
+        logger.error(f"❌ Ошибка загрузки в Yandex Cloud: {e}")
         return None
 
+@retry_on_db_error
 async def save_file_to_db(order_id, file_name, file_url, file_type="user_upload"):
     async with AsyncSessionLocal() as session:
-        order_file = OrderFile(
-            order_id=order_id,
-            file_name=file_name,
-            file_url=file_url,
-            file_type=file_type
-        )
-        session.add(order_file)
-        await session.commit()
+        try:
+            order_file = OrderFile(
+                order_id=order_id,
+                file_name=file_name,
+                file_url=file_url,
+                file_type=file_type
+            )
+            session.add(order_file)
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"❌ Ошибка сохранения файла: {e}")
+            raise
 
 # ===================== ИНТЕГРАЦИИ =====================
 try:
     from openai import OpenAI
-    deepseek_client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY", ""), base_url="https://api.deepseek.com")
-except:
+    deepseek_client = OpenAI(
+        api_key=os.getenv("DEEPSEEK_API_KEY", ""),
+        base_url="https://api.deepseek.com",
+        timeout=30.0,
+        max_retries=3
+    )
+except Exception as e:
     deepseek_client = None
+    logger.error(f"❌ Ошибка инициализации DeepSeek: {e}")
 
 def generate_document(prompt, user_data):
     if not deepseek_client:
@@ -344,13 +474,18 @@ def generate_document(prompt, user_data):
     try:
         response = deepseek_client.chat.completions.create(
             model="deepseek-v4-pro",
-            messages=[{"role": "system", "content": prompt}, {"role": "user", "content": str(user_data)}],
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": str(user_data)}
+            ],
             temperature=0.4,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
+            timeout=30.0
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"❌ Ошибка генерации: {e}"
+        logger.error(f"❌ Ошибка генерации: {e}")
+        return f"❌ Ошибка генерации: {str(e)[:100]}"
 
 try:
     import gspread
@@ -359,20 +494,25 @@ try:
     creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
     gs_client = gspread.authorize(creds)
     sheet = gs_client.open("Заявки").sheet1
-except:
+    logger.info("✅ Google Sheets подключен")
+except Exception as e:
     sheet = None
+    logger.warning(f"⚠️ Google Sheets не настроен: {e}")
 
 def add_lead_to_gs(data):
     if sheet:
-        row = [data.get("name", ""), data.get("phone", ""), data.get("service", ""), json.dumps(data, ensure_ascii=False)]
-        sheet.append_row(row)
+        try:
+            row = [data.get("name", ""), data.get("phone", ""), data.get("service", ""), json.dumps(data, ensure_ascii=False)]
+            sheet.append_row(row)
+        except Exception as e:
+            logger.error(f"❌ Ошибка добавления в Google Sheets: {e}")
 
 async def notify_admins(text):
     for admin_id in ADMIN_IDS:
         try:
             await bot.send_message(admin_id, text)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Не удалось уведомить админа {admin_id}: {e}")
 
 # ===================== EMAIL =====================
 def send_email(to_email, subject, body):
@@ -382,7 +522,7 @@ def send_email(to_email, subject, body):
         smtp_login = os.getenv("SMTP_LOGIN")
         smtp_password = os.getenv("SMTP_PASSWORD")
         if not all([smtp_server, smtp_login, smtp_password]):
-            print("SMTP не настроен")
+            logger.warning("SMTP не настроен")
             return False
         msg = MIMEMultipart()
         msg['From'] = smtp_login
@@ -394,7 +534,7 @@ def send_email(to_email, subject, body):
             server.sendmail(smtp_login, [to_email], msg.as_string())
         return True
     except Exception as e:
-        print(f"❌ Ошибка отправки email: {e}")
+        logger.error(f"❌ Ошибка отправки email: {e}")
         return False
 
 # ===================== ОПЛАТА =====================
@@ -495,43 +635,24 @@ class CommonStates(StatesGroup):
 class FeedbackStates(StatesGroup):
     waiting_for_message = State()
 
-class FullPackageStates(StatesGroup):
-    step1 = State()   # Название проекта (ТЗ)
-    step2 = State()   # Суть проекта (ТЗ)
-    step3 = State()   # Целевая аудитория (ТЗ)
-    step4 = State()   # Функции (ТЗ)
-    step5 = State()   # Конкуренты (ТЗ)
-    step6 = State()   # Технические ограничения (ТЗ)
-    step7 = State()   # Сроки (ТЗ)
-    step8 = State()   # Бюджет (ТЗ)
-    step9 = State()   # Файлы (ТЗ)
-    step10 = State()  # Главная задача (ТЭО)
-    step11 = State()  # Ресурсы (ТЭО)
-    step12 = State()  # Риски (ТЭО)
-    step13 = State()  # Нормативы (ТЭО)
-    step14 = State()  # Эффект (ТЭО)
-    step15 = State()  # Данные (ТЭО)
-    step16 = State()  # Горизонт (ТЭО)
-    step17 = State()  # Файлы (ТЭО)
-    step18 = State()  # Доходы (Финмодель)
-    step19 = State()  # Затраты (Финмодель)
-    step20 = State()  # Инвестиции (Финмодель)
-    step21 = State()  # Безубыточность (Финмодель)
-    step22 = State()  # Метрики (Финмодель)
-    step23 = State()  # Данные (Финмодель)
-    step24 = State()  # Горизонт (Финмодель)
-    step25 = State()  # Резюме (Бизнес-план)
-    step26 = State()  # Продукт (Бизнес-план)
-    step27 = State()  # Конкуренты (Бизнес-план)
-    step28 = State()  # Маркетинг (Бизнес-план)
-    step29 = State()  # Команда (Бизнес-план)
-    step30 = State()  # План продаж (Бизнес-план)
-    step31 = State()  # Риски (Бизнес-план)
-    step32 = State()  # Стартовый капитал (Бизнес-план)
-    step33 = State()  # Финмодель (Бизнес-план, файл)
-    step34 = State()  # Файлы (Бизнес-план, дополнительные)
-
 # ===================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====================
+async def safe_send_message(user_id: int, text: str, **kwargs) -> bool:
+    """Безопасная отправка сообщения с обработкой ошибок"""
+    try:
+        await bot.send_message(user_id, text, **kwargs)
+        return True
+    except TelegramRetryAfter as e:
+        logger.warning(f"Flood control, ждем {e.retry_after} сек")
+        await asyncio.sleep(e.retry_after)
+        return await safe_send_message(user_id, text, **kwargs)
+    except (TelegramNetworkError, ClientError) as e:
+        logger.error(f"Сетевая ошибка при отправке: {e}")
+        await asyncio.sleep(1)
+        return False
+    except Exception as e:
+        logger.error(f"Ошибка при отправке сообщения: {e}")
+        return False
+
 async def finalize_order(message: types.Message, state: FSMContext, service_name: str, fields: dict, price_override=None):
     try:
         data = await state.get_data()
@@ -545,15 +666,18 @@ async def finalize_order(message: types.Message, state: FSMContext, service_name
         
         summary = f"📋 {service_name}\n\n"
         for key, label in fields.items():
-            summary += f"{label}: {data.get(key, '—')}\n"
+            value = data.get(key, '—')
+            if key == "file_url" and value:
+                value = "📎 Файл загружен"
+            summary += f"{label}: {value}\n"
         summary += f"\n💰 Стоимость: {price} руб."
         
-        # Отправка email (если настроен)
+        # Отправка email
         subject = f"🔔 Новая заявка #{order_id}"
         body = f"Услуга: {service_name}\nКлиент: {user.full_name or user.username}\nТелефон: {user.phone or 'не указан'}\nEmail: {user.email or 'не указан'}\n\nДанные заявки:\n{summary}\n\nTelegram: @{message.from_user.username}\nID: {message.from_user.id}"
         send_email(MANAGER_EMAIL, subject, body)
         
-        # Уведомление администраторам в Telegram
+        # Уведомление администраторам
         admin_message = (
             f"🔔 НОВАЯ ЗАЯВКА #{order_id}\n\n"
             f"Услуга: {service_name}\n"
@@ -566,19 +690,24 @@ async def finalize_order(message: types.Message, state: FSMContext, service_name
         )
         if data.get("file_url"):
             admin_message += f"\n\n📎 Файл: {data['file_url']}"
-        for admin_id in ADMIN_IDS:
-            try:
-                await bot.send_message(admin_id, admin_message)
-            except Exception as e:
-                print(f"Не удалось отправить уведомление админу {admin_id}: {e}")
         
-        await message.answer(summary)
-        await message.answer("💳 Оплата временно отключена для тестирования. Заявка принята!")
+        for admin_id in ADMIN_IDS:
+            await safe_send_message(admin_id, admin_message)
+        
+        await safe_send_message(
+            message.from_user.id,
+            f"{summary}\n\n💳 Оплата временно отключена для тестирования. Заявка принята!"
+        )
+        
         await state.clear()
         await clear_user_state(message.from_user.id)
+        
     except Exception as e:
-        print(f"❌ Ошибка в finalize_order: {e}")
-        await message.answer("Произошла ошибка при создании заявки. Пожалуйста, попробуйте позже.")
+        logger.error(f"❌ Ошибка в finalize_order: {e}", exc_info=True)
+        await safe_send_message(
+            message.from_user.id,
+            "Произошла ошибка при создании заявки. Пожалуйста, попробуйте позже."
+        )
 
 # ===================== ГЛОБАЛЬНЫЕ ОБРАБОТЧИКИ =====================
 @dp.message(Command("start"))
@@ -592,7 +721,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
             [InlineKeyboardButton(text="✅ Продолжить", callback_data="resume_state")],
             [InlineKeyboardButton(text="❌ Начать заново", callback_data="clear_state")]
         ])
-        await message.answer("У вас есть незавершённая заявка. Хотите продолжить?", reply_markup=kb)
+        await safe_send_message(message.from_user.id, "У вас есть незавершённая заявка. Хотите продолжить?", reply_markup=kb)
         return
     
     if not user.consent_given:
@@ -602,24 +731,31 @@ async def cmd_start(message: types.Message, state: FSMContext):
             [InlineKeyboardButton(text="✅ Согласен", callback_data="accept_consent")],
             [InlineKeyboardButton(text="❌ Не согласен", callback_data="decline_consent")]
         ])
-        await message.answer(
+        await safe_send_message(
+            message.from_user.id,
             "Для продолжения работы с ботом необходимо ваше согласие на обработку персональных данных.\n"
             "Мы собираем только имя, телефон и email для связи по вашему заказу.\n\n"
             "Ознакомьтесь с документами, нажав кнопки ниже, и, если вы согласны, нажмите «Согласен».",
-            reply_markup=kb,
-            parse_mode="Markdown"
+            reply_markup=kb
         )
         await state.set_state(CommonStates.ask_consent)
         return
+    
     if user.email is None:
         await state.set_state(CommonStates.ask_email)
-        await message.answer(
+        await safe_send_message(
+            message.from_user.id,
             "Пожалуйста, укажите ваш email для связи (на него придёт подтверждение заявки).\n"
             "Если не хотите указывать, нажмите 'Пропустить' — мы свяжемся с вами через Telegram.",
             reply_markup=nav_keyboard()
         )
         return
-    await message.answer("Добро пожаловать в AIdea Lab PRO!\n\nВыберите услугу:", reply_markup=main_menu_keyboard())
+    
+    await safe_send_message(
+        message.from_user.id,
+        "Добро пожаловать в AIdea Lab PRO!\n\nВыберите услугу:",
+        reply_markup=main_menu_keyboard()
+    )
 
 @dp.callback_query(lambda c: c.data == "resume_state")
 async def resume_state(callback: types.CallbackQuery, state: FSMContext):
@@ -674,7 +810,7 @@ async def decline_consent(callback: types.CallbackQuery, state: FSMContext):
 @dp.message(CommonStates.ask_email)
 async def process_email(message: types.Message, state: FSMContext):
     if not message.text:
-        await message.answer("Пожалуйста, введите ваш email или нажмите 'Пропустить'.")
+        await safe_send_message(message.from_user.id, "Пожалуйста, введите ваш email или нажмите 'Пропустить'.")
         return
     text = message.text.strip()
     if "пропустить" in text.lower() or text == "⏭ Пропустить":
@@ -685,10 +821,18 @@ async def process_email(message: types.Message, state: FSMContext):
                 user.email = None
                 await session.commit()
         await state.clear()
-        await message.answer("✅ Email пропущен. Для связи мы будем использовать ваш Telegram. Теперь выберите услугу:", reply_markup=main_menu_keyboard())
+        await safe_send_message(
+            message.from_user.id,
+            "✅ Email пропущен. Для связи мы будем использовать ваш Telegram. Теперь выберите услугу:",
+            reply_markup=main_menu_keyboard()
+        )
         return
     if "@" not in text or "." not in text:
-        await message.answer("Введите корректный email (например, name@domain.com) или нажмите 'Пропустить'.", reply_markup=nav_keyboard())
+        await safe_send_message(
+            message.from_user.id,
+            "Введите корректный email (например, name@domain.com) или нажмите 'Пропустить'.",
+            reply_markup=nav_keyboard()
+        )
         return
     async with AsyncSessionLocal() as session:
         user = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
@@ -697,19 +841,23 @@ async def process_email(message: types.Message, state: FSMContext):
             user.email = text
             await session.commit()
     await state.clear()
-    await message.answer(f"✅ Email {text} сохранён! Теперь выберите услугу:", reply_markup=main_menu_keyboard())
+    await safe_send_message(
+        message.from_user.id,
+        f"✅ Email {text} сохранён! Теперь выберите услугу:",
+        reply_markup=main_menu_keyboard()
+    )
 
 @dp.message(lambda msg: msg.text == "🏠 Главное меню")
 async def go_home(message: types.Message, state: FSMContext):
     await state.clear()
     await clear_user_state(message.from_user.id)
-    await message.answer("Главное меню", reply_markup=main_menu_keyboard())
+    await safe_send_message(message.from_user.id, "Главное меню", reply_markup=main_menu_keyboard())
 
 @dp.message(lambda msg: msg.text == "🔙 Назад")
 async def go_back(message: types.Message, state: FSMContext):
     current = await state.get_state()
     if not current:
-        await message.answer("Вы не в процессе заполнения.", reply_markup=main_menu_keyboard())
+        await safe_send_message(message.from_user.id, "Вы не в процессе заполнения.", reply_markup=main_menu_keyboard())
         return
     back_map = {
         "TZStates": {"essence":"name", "audience":"essence", "features":"audience", "competitors":"features", "tech_limits":"competitors", "deadline":"tech_limits", "budget":"deadline", "files":"budget"},
@@ -728,15 +876,16 @@ async def go_back(message: types.Message, state: FSMContext):
         prev = back_map[prefix][step]
         cls = globals()[prefix]
         await state.set_state(getattr(cls, prev))
-        await message.answer("Вернулись назад.", reply_markup=nav_keyboard())
+        await safe_send_message(message.from_user.id, "Вернулись назад.", reply_markup=nav_keyboard())
     else:
-        await message.answer("Это первый шаг.", reply_markup=nav_keyboard())
+        await safe_send_message(message.from_user.id, "Это первый шаг.", reply_markup=nav_keyboard())
 
 # ===================== ОБРАТНАЯ СВЯЗЬ =====================
 @dp.message(lambda msg: msg.text == "📩 Написать разработчику")
 async def start_feedback(message: types.Message, state: FSMContext):
     await state.set_state(FeedbackStates.waiting_for_message)
-    await message.answer(
+    await safe_send_message(
+        message.from_user.id,
         "📝 Напишите ваше сообщение разработчику (до 1000 символов).\n"
         "Мы постараемся ответить вам как можно быстрее.\n\n"
         "Для отмены нажмите кнопку «Отмена».",
@@ -747,14 +896,17 @@ async def start_feedback(message: types.Message, state: FSMContext):
 async def process_feedback(message: types.Message, state: FSMContext):
     if message.text == "❌ Отмена":
         await state.clear()
-        await message.answer("✅ Отправка отменена. Возвращаемся в меню.", reply_markup=main_menu_keyboard())
+        await safe_send_message(message.from_user.id, "✅ Отправка отменена. Возвращаемся в меню.", reply_markup=main_menu_keyboard())
         return
     if not message.text:
-        await message.answer("Пожалуйста, напишите текст сообщения или нажмите 'Отмена'.")
+        await safe_send_message(message.from_user.id, "Пожалуйста, напишите текст сообщения или нажмите 'Отмена'.")
         return
     text = message.text.strip()
     if len(text) > 1000:
-        await message.answer(f"❌ Сообщение слишком длинное ({len(text)} символов). Максимум 1000 символов. Пожалуйста, сократите.")
+        await safe_send_message(
+            message.from_user.id,
+            f"❌ Сообщение слишком длинное ({len(text)} символов). Максимум 1000 символов. Пожалуйста, сократите."
+        )
         return
     user = await get_or_create_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
     full_name = message.from_user.full_name or "не указано"
@@ -768,12 +920,10 @@ async def process_feedback(message: types.Message, state: FSMContext):
         f"📝 Текст сообщения:\n{text}"
     )
     for admin_id in ADMIN_IDS:
-        try:
-            await bot.send_message(admin_id, report)
-        except Exception as e:
-            print(f"Не удалось отправить сообщение админу {admin_id}: {e}")
+        await safe_send_message(admin_id, report)
     await state.clear()
-    await message.answer(
+    await safe_send_message(
+        message.from_user.id,
         "✅ Ваше сообщение отправлено разработчикам. Мы свяжемся с вами в ближайшее время.",
         reply_markup=main_menu_keyboard()
     )
@@ -790,7 +940,8 @@ async def stats_command(message: types.Message):
         total_users = total_users.scalar()
         paid_orders = await session.execute(select(func.count()).where(Order.status == "PAID"))
         paid_orders = paid_orders.scalar()
-    await message.answer(
+    await safe_send_message(
+        message.from_user.id,
         f"📊 СТАТИСТИКА\n\n"
         f"👥 Всего пользователей: {total_users}\n"
         f"📋 Всего заявок: {total_orders}\n"
@@ -804,7 +955,7 @@ async def broadcast_command(message: types.Message):
         return
     text = message.text.replace("/broadcast", "").strip()
     if not text:
-        await message.answer("Использование: /broadcast текст сообщения")
+        await safe_send_message(message.from_user.id, "Использование: /broadcast текст сообщения")
         return
     async with AsyncSessionLocal() as session:
         users = await session.execute(select(User.telegram_id))
@@ -815,83 +966,311 @@ async def broadcast_command(message: types.Message):
             await bot.send_message(user_id, text)
             sent += 1
             await asyncio.sleep(0.1)
-        except:
-            pass
-    await message.answer(f"✅ Сообщение отправлено {sent} пользователям из {len(users)}.")
+        except Exception as e:
+            logger.error(f"Не удалось отправить сообщение {user_id}: {e}")
+    await safe_send_message(
+        message.from_user.id,
+        f"✅ Сообщение отправлено {sent} пользователям из {len(users)}."
+    )
 
-# ===================== ТЕСТОВЫЙ СЦЕНАРИЙ ТЗ (МИНИМАЛЬНЫЙ) =====================
+# ===================== СЦЕНАРИЙ ТЗ =====================
 @dp.message(lambda msg: msg.text == "📋 Техническое задание")
-async def start_tz_test(message: types.Message, state: FSMContext):
+async def start_tz(message: types.Message, state: FSMContext):
     await state.set_state(TZStates.name)
-    await message.answer("Тест: введите любое название.")
+    await safe_send_message(
+        message.from_user.id,
+        "Начнём с названия. Как назовём ваш проект?",
+        reply_markup=nav_keyboard()
+    )
 
 @dp.message(TZStates.name)
-async def tz_name_test(message: types.Message, state: FSMContext):
-    print(f"✅ Получено имя: {message.text}")
+async def tz_name(message: types.Message, state: FSMContext):
+    if not message.text or not message.text.strip():
+        await safe_send_message(message.from_user.id, "Пожалуйста, введите название.")
+        return
     await state.update_data(name=message.text)
     await state.set_state(TZStates.essence)
-    await message.answer("Тест: введите любое описание.")
+    await safe_send_message(
+        message.from_user.id,
+        "Опишите свою идею простыми словами: что вы хотите создать и кому это поможет?",
+        reply_markup=nav_keyboard()
+    )
 
 @dp.message(TZStates.essence)
-async def tz_essence_test(message: types.Message, state: FSMContext):
-    print(f"✅ Получено описание: {message.text}")
+async def tz_essence(message: types.Message, state: FSMContext):
+    if not message.text or not message.text.strip():
+        await safe_send_message(message.from_user.id, "Пожалуйста, опишите суть.")
+        return
     await state.update_data(essence=message.text)
     await state.set_state(TZStates.audience)
-    await message.answer("Тест: введите любую аудиторию (или 'пропустить').")
+    await safe_send_message(
+        message.from_user.id,
+        "Кто ваши клиенты или пользователи? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
 
 @dp.message(TZStates.audience)
-async def tz_audience_test(message: types.Message, state: FSMContext):
-    print(f"✅ Получена аудитория: {message.text}")
-    await state.update_data(audience=message.text)
+async def tz_audience(message: types.Message, state: FSMContext):
+    if "пропустить" in message.text.lower():
+        await state.update_data(audience="")
+    else:
+        await state.update_data(audience=message.text)
     await state.set_state(TZStates.features)
-    await message.answer("Тест: введите любые функции.")
+    await safe_send_message(
+        message.from_user.id,
+        "Какие главные возможности должно иметь ваше решение? Напишите список через запятую.",
+        reply_markup=nav_keyboard()
+    )
 
 @dp.message(TZStates.features)
-async def tz_features_test(message: types.Message, state: FSMContext):
-    print(f"✅ Получены функции: {message.text}")
+async def tz_features(message: types.Message, state: FSMContext):
+    if not message.text or not message.text.strip():
+        await safe_send_message(message.from_user.id, "Пожалуйста, перечислите функции.")
+        return
     await state.update_data(features=message.text)
     await state.set_state(TZStates.competitors)
-    await message.answer("Тест: введите конкурентов (или 'пропустить').")
+    await safe_send_message(
+        message.from_user.id,
+        "Есть ли у вас конкуренты? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
 
 @dp.message(TZStates.competitors)
-async def tz_competitors_test(message: types.Message, state: FSMContext):
-    print(f"✅ Получены конкуренты: {message.text}")
-    await state.update_data(competitors=message.text)
+async def tz_competitors(message: types.Message, state: FSMContext):
+    if "пропустить" in message.text.lower():
+        await state.update_data(competitors="")
+    else:
+        await state.update_data(competitors=message.text)
     await state.set_state(TZStates.tech_limits)
-    await message.answer("Тест: введите тех. ограничения (или 'пропустить').")
+    await safe_send_message(
+        message.from_user.id,
+        "Есть ли технические рамки? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
 
 @dp.message(TZStates.tech_limits)
-async def tz_tech_limits_test(message: types.Message, state: FSMContext):
-    print(f"✅ Получены тех. ограничения: {message.text}")
-    await state.update_data(tech_limits=message.text)
+async def tz_tech_limits(message: types.Message, state: FSMContext):
+    if "пропустить" in message.text.lower():
+        await state.update_data(tech_limits="")
+    else:
+        await state.update_data(tech_limits=message.text)
     await state.set_state(TZStates.deadline)
-    await message.answer("Тест: введите сроки (или 'пропустить').")
+    await safe_send_message(
+        message.from_user.id,
+        "Когда вы хотите получить готовый результат? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
 
 @dp.message(TZStates.deadline)
-async def tz_deadline_test(message: types.Message, state: FSMContext):
-    print(f"✅ Получены сроки: {message.text}")
-    await state.update_data(deadline=message.text)
+async def tz_deadline(message: types.Message, state: FSMContext):
+    if "пропустить" in message.text.lower():
+        await state.update_data(deadline="")
+    else:
+        await state.update_data(deadline=message.text)
     await state.set_state(TZStates.budget)
-    await message.answer("Тест: введите бюджет (или 'пропустить').")
+    await safe_send_message(
+        message.from_user.id,
+        "Есть ли у вас бюджет на этот проект? Если да, укажите сумму. Если нет, напишите 'нет' или выберите 'Пропустить'.",
+        reply_markup=nav_keyboard()
+    )
 
 @dp.message(TZStates.budget)
-async def tz_budget_test(message: types.Message, state: FSMContext):
-    print(f"✅ Получен бюджет: {message.text}")
-    await state.update_data(budget=message.text)
+async def tz_budget(message: types.Message, state: FSMContext):
+    text = message.text.lower().strip()
+    if "пропустить" in text:
+        await state.update_data(budget="")
+        await state.set_state(TZStates.files)
+        await safe_send_message(
+            message.from_user.id,
+            "Приложите дополнительные материалы (макеты, референсы). Пока можно только пропустить.",
+            reply_markup=nav_keyboard()
+        )
+        return
+    if text in ["нет", "нисколько", "0", "без бюджета", "не готов", "не знаю", "нет бюджета"]:
+        await state.update_data(budget="0 (не указан)")
+        await state.set_state(TZStates.files)
+        await safe_send_message(
+            message.from_user.id,
+            "Приложите дополнительные материалы (макеты, референсы). Пока можно только пропустить.",
+            reply_markup=nav_keyboard()
+        )
+        return
+    try:
+        digits = re.sub(r'[^0-9]', '', text)
+        if digits:
+            budget = int(digits)
+            await state.update_data(budget=f"{budget} руб.")
+        else:
+            await state.update_data(budget=text)
+    except:
+        await state.update_data(budget=text)
     await state.set_state(TZStates.files)
-    await message.answer("Тест: введите 'пропустить' для завершения.")
+    await safe_send_message(
+        message.from_user.id,
+        "Приложите дополнительные материалы (макеты, референсы). Пока можно только пропустить.",
+        reply_markup=nav_keyboard()
+    )
 
 @dp.message(TZStates.files)
-async def tz_files_test(message: types.Message, state: FSMContext):
-    print(f"✅ Финал: {message.text}")
-    await message.answer("✅ Тест пройден! Все шаги работают.")
-    await state.clear()
+async def tz_files(message: types.Message, state: FSMContext):
+    if message.document:
+        file_id = message.document.file_id
+        file_name = f"{datetime.datetime.now().timestamp()}_{message.document.file_name}"
+        file_data = await bot.download_file(file_id, destination=None)
+        file_url = upload_to_yandex(file_data, file_name)
+        if file_url:
+            await state.update_data(file_url=file_url)
+            await state.update_data(file_name=file_name)
+        else:
+            await safe_send_message(message.from_user.id, "Не удалось сохранить файл. Вы можете пропустить этот шаг.")
+            return
+    elif "пропустить" in message.text.lower():
+        await state.update_data(file_url=None)
+        await state.update_data(file_name=None)
+    else:
+        await safe_send_message(
+            message.from_user.id,
+            "Пожалуйста, загрузите файл или нажмите 'Пропустить'.",
+            reply_markup=nav_keyboard()
+        )
+        return
+
+    data = await state.get_data()
+    prompt = "Ты — эксперт по разработке ТЗ. На основе данных сгенерируй структурированное ТЗ в формате JSON."
+    doc = generate_document(prompt, data)
+    if doc and "⚠️" not in doc and "❌" not in doc:
+        await safe_send_message(message.from_user.id, f"📄 Сгенерированный черновик ТЗ:\n\n{doc}")
+        for admin_id in ADMIN_IDS:
+            try:
+                await safe_send_message(
+                    admin_id,
+                    f"📄 Черновик ТЗ от @{message.from_user.username} (ID: {message.from_user.id}):\n\n{doc}"
+                )
+            except Exception as e:
+                logger.error(f"Не удалось отправить черновик админу {admin_id}: {e}")
+    else:
+        await safe_send_message(message.from_user.id, "⚠️ Не удалось сгенерировать черновик. Пожалуйста, обратитесь к менеджеру.")
+
+    fields = {
+        "name": "Название",
+        "essence": "Суть проекта",
+        "audience": "Клиенты",
+        "features": "Функции",
+        "competitors": "Конкуренты",
+        "tech_limits": "Тех. рамки",
+        "deadline": "Срок",
+        "budget": "Бюджет",
+        "file_url": "Ссылка на файл"
+    }
+    await finalize_order(message, state, "Техническое задание", fields)
+
+# ===================== МОНИТОРИНГ И ЗАЩИТА ОТ ЗАВИСАНИЙ =====================
+async def health_check():
+    """Периодическая проверка работоспособности"""
+    while True:
+        try:
+            # Проверка соединения с Telegram
+            me = await bot.get_me()
+            logger.info(f"✅ Бот активен: @{me.username}")
+            
+            # Проверка БД
+            async with AsyncSessionLocal() as session:
+                await session.execute(text("SELECT 1"))
+            logger.info("✅ База данных доступна")
+            
+            await asyncio.sleep(60)  # Проверка каждую минуту
+        except Exception as e:
+            logger.error(f"❌ Ошибка health check: {e}")
+            await asyncio.sleep(10)
+
+async def restart_polling_on_error():
+    """Перезапуск polling при ошибках"""
+    retry_count = 0
+    max_retries = 10
+    
+    while True:
+        try:
+            logger.info("🚀 Запуск polling с защитой от зависаний...")
+            await dp.start_polling(
+                bot,
+                allowed_updates=dp.resolve_used_update_types(),
+                polling_timeout=POLLING_TIMEOUT,
+                relax=POLLING_INTERVAL,
+                handle_signals=False
+            )
+            retry_count = 0  # Сброс счетчика при успешном запуске
+        except (TelegramNetworkError, ClientError) as e:
+            retry_count += 1
+            logger.error(f"❌ Сетевая ошибка в polling (попытка {retry_count}): {e}")
+            await asyncio.sleep(min(30, 5 * retry_count))
+        except Exception as e:
+            retry_count += 1
+            logger.error(f"❌ Критическая ошибка в polling (попытка {retry_count}): {e}", exc_info=True)
+            await asyncio.sleep(10 * retry_count)
+            
+            if retry_count >= max_retries:
+                logger.critical("❌ Превышено максимальное количество перезапусков")
+                # Отправка уведомления админам
+                for admin_id in ADMIN_IDS:
+                    await safe_send_message(
+                        admin_id,
+                        f"🚨 Бот перезапускается после {retry_count} ошибок!\nОшибка: {str(e)[:200]}"
+                    )
+                retry_count = 0
+
+# ===================== ОБРАБОТЧИКИ СИГНАЛОВ =====================
+def signal_handler(signum, frame):
+    """Обработка сигналов для корректного завершения"""
+    logger.info(f"Получен сигнал {signum}, завершаем работу...")
+    sys.exit(0)
 
 # ===================== ЗАПУСК БОТА =====================
 async def main():
-    await init_db()
-    print("✅ Бот запущен в режиме polling")
-    await dp.start_polling(bot)
+    # Установка обработчиков сигналов
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    try:
+        # Инициализация БД
+        await init_db()
+        logger.info("✅ База данных инициализирована")
+        
+        # Запуск health check в фоновом режиме
+        asyncio.create_task(health_check())
+        logger.info("✅ Health check запущен")
+        
+        # Уведомление админов о запуске
+        for admin_id in ADMIN_IDS:
+            await safe_send_message(
+                admin_id,
+                f"🤖 Бот AIdea Lab PRO запущен!\nВремя: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+        
+        # Запуск polling с защитой от зависаний
+        await restart_polling_on_error()
+        
+    except Exception as e:
+        logger.critical(f"❌ Критическая ошибка при запуске: {e}", exc_info=True)
+        # Уведомление админов о критической ошибке
+        for admin_id in ADMIN_IDS:
+            await safe_send_message(
+                admin_id,
+                f"🚨 КРИТИЧЕСКАЯ ОШИБКА при запуске бота!\n{e}\n\nБот будет перезапущен через 30 секунд..."
+            )
+        await asyncio.sleep(30)
+        raise
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Добавляем поддержку перезапуска при ошибках
+    while True:
+        try:
+            asyncio.run(main())
+        except KeyboardInterrupt:
+            logger.info("👋 Бот остановлен пользователем")
+            break
+        except Exception as e:
+            logger.critical(f"❌ Бот упал с ошибкой: {e}", exc_info=True)
+            logger.info("🔄 Перезапуск через 30 секунд...")
+            time.sleep(30)
+            continue
+        break
