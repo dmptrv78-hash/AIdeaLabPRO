@@ -23,6 +23,7 @@ from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
 )
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiogram.enums import ChatMemberStatus  # <-- ПРАВИЛЬНЫЙ ИМПОРТ!
 
 from aiohttp import web
 from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Boolean, select, func
