@@ -54,7 +54,7 @@ PORT = int(os.getenv("PORT", 10000))
 
 # ===================== ИНИЦИАЛИЗАЦИЯ =====================
 storage = MemoryStorage()
-bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher(storage=storage)
 
 # ===================== БАЗА ДАННЫХ =====================
