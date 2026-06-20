@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
+from aiogram.filters import DefaultBotProperties
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
