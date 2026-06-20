@@ -15,6 +15,7 @@ from typing import Optional
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.client.default import DefaultBotProperties
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -23,7 +24,6 @@ from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
 )
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
-from aiogram.enums import ChatMemberStatus  # <-- ПРАВИЛЬНЫЙ ИМПОРТ!
 
 from aiohttp import web
 from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Boolean, select, func
@@ -250,74 +250,8 @@ def calculate_price(service, data=None):
     return prices.get(service, 1500)
 
 # ===================== ОБРАБОТЧИКИ =====================
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
-    logger.info(f"🔄 /start от {user_id}")
-    
-    await state.clear()
-    await clear_user_state(user_id)
-    user = await get_or_create_user(user_id, message.from_user.username, message.from_user.full_name)
-    
-    if not user.consent_given:
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📄 Политика", callback_data="show_privacy")],
-            [InlineKeyboardButton(text="📄 Оферта", callback_data="show_offer")],
-            [InlineKeyboardButton(text="✅ Согласен", callback_data="accept_consent")],
-            [InlineKeyboardButton(text="❌ Не согласен", callback_data="decline_consent")]
-        ])
-        await safe_send_message(
-            user_id,
-            "🔐 **Для продолжения необходимо ваше согласие**\n\n"
-            "Мы собираем только имя, телефон и email для связи.\n\n"
-            "Ознакомьтесь с документами и нажмите «Согласен».",
-            reply_markup=kb
-        )
-        await state.set_state(CommonStates.ask_consent)
-        return
-    
-    if user.email is None:
-        await state.set_state(CommonStates.ask_email)
-        await safe_send_message(
-            user_id,
-            "📧 **Укажите ваш email для связи**\n\n"
-            "На него придёт подтверждение заявки.\n"
-            "Если не хотите, нажмите «Пропустить».",
-            reply_markup=nav_keyboard()
-        )
-        return
-    
-    await show_main_menu(user_id, "👋 **Добро пожаловать в AIdea Lab PRO!**\n\nВыберите услугу:")
-
-@dp.callback_query(lambda c: c.data == "accept_consent")
-async def accept_consent(callback: types.CallbackQuery, state: FSMContext):
-    user_id = callback.from_user.id
-    
-    async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_id == user_id))
-        user = user.scalar_one_or_none()
-        if user:
-            user.consent_given = True
-            await session.commit()
-    
-    await callback.message.delete()
-    await state.set_state(CommonStates.ask_email)
-    await safe_send_message(
-        user_id,
-        "✅ **Спасибо!**\n\n📧 Укажите ваш email или нажмите «Пропустить».",
-        reply_markup=nav_keyboard()
-    )
-    await callback.answer()
-
-@dp.callback_query(lambda c: c.data == "decline_consent")
-async def decline_consent(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.delete()
-    await state.clear()
-    await safe_send_message(
-        callback.from_user.id,
-        "❌ Без согласия мы не можем работать.\n\nЕсли передумаете, напишите /start."
-    )
-    await callback.answer()
+# ВНИМАНИЕ: Оригинальный обработчик /start УДАЛЕН!
+# Вместо него используется обработчик из app.py
 
 @dp.callback_query(lambda c: c.data == "show_privacy")
 async def show_privacy(callback: types.CallbackQuery):
@@ -328,45 +262,6 @@ async def show_privacy(callback: types.CallbackQuery):
 async def show_offer(callback: types.CallbackQuery):
     await callback.message.answer("📄 **Публичная оферта**\n\nУслуги оказываются в соответствии с законодательством РФ. Подробнее: support@aidealab.pro")
     await callback.answer()
-
-@dp.message(CommonStates.ask_email)
-async def process_email(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
-    text = message.text.strip() if message.text else ""
-    
-    if text == "🏠 Главное меню":
-        await clear_and_go_home(message, state)
-        return
-    
-    if text in ["⏭ Пропустить", "пропустить"]:
-        async with AsyncSessionLocal() as session:
-            user = await session.execute(select(User).where(User.telegram_id == user_id))
-            user = user.scalar_one_or_none()
-            if user:
-                user.email = None
-                await session.commit()
-        
-        await state.clear()
-        await show_main_menu(user_id, "✅ **Email пропущен.**\n\nВыберите услугу:")
-        return
-    
-    if "@" not in text or "." not in text:
-        await safe_send_message(
-            user_id,
-            "❌ **Некорректный email**\n\nВведите email в формате: name@domain.com\nИли нажмите «Пропустить».",
-            reply_markup=nav_keyboard()
-        )
-        return
-    
-    async with AsyncSessionLocal() as session:
-        user = await session.execute(select(User).where(User.telegram_id == user_id))
-        user = user.scalar_one_or_none()
-        if user:
-            user.email = text
-            await session.commit()
-    
-    await state.clear()
-    await show_main_menu(user_id, f"✅ **Email {text} сохранён!**\n\nВыберите услугу:")
 
 @dp.message(lambda msg: msg.text == "🏠 Главное меню")
 async def go_home(message: types.Message, state: FSMContext):
