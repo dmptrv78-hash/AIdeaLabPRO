@@ -819,157 +819,73 @@ async def broadcast_command(message: types.Message):
             pass
     await message.answer(f"✅ Сообщение отправлено {sent} пользователям из {len(users)}.")
 
-# ===================== СЦЕНАРИЙ ТЗ (БЕЗ save_user_state) =====================
+# ===================== ТЕСТОВЫЙ СЦЕНАРИЙ ТЗ (МИНИМАЛЬНЫЙ) =====================
 @dp.message(lambda msg: msg.text == "📋 Техническое задание")
-async def start_tz(message: types.Message, state: FSMContext):
+async def start_tz_test(message: types.Message, state: FSMContext):
     await state.set_state(TZStates.name)
-    await message.answer("Начнём с названия. Как назовём ваш проект?", reply_markup=nav_keyboard())
+    await message.answer("Тест: введите любое название.")
 
 @dp.message(TZStates.name)
-async def tz_name(message: types.Message, state: FSMContext):
-    print(f"🔄 Шаг 1: {message.text}")
-    if not message.text or not message.text.strip():
-        await message.answer("Пожалуйста, введите название.")
-        return
+async def tz_name_test(message: types.Message, state: FSMContext):
+    print(f"✅ Получено имя: {message.text}")
     await state.update_data(name=message.text)
     await state.set_state(TZStates.essence)
-    await message.answer("Опишите свою идею простыми словами: что вы хотите создать и кому это поможет?", reply_markup=nav_keyboard())
+    await message.answer("Тест: введите любое описание.")
 
 @dp.message(TZStates.essence)
-async def tz_essence(message: types.Message, state: FSMContext):
-    print(f"🔄 Шаг 2: {message.text[:50]}...")
-    if not message.text or not message.text.strip():
-        await message.answer("Пожалуйста, опишите суть.")
-        return
+async def tz_essence_test(message: types.Message, state: FSMContext):
+    print(f"✅ Получено описание: {message.text}")
     await state.update_data(essence=message.text)
     await state.set_state(TZStates.audience)
-    await message.answer("Кто ваши клиенты или пользователи? (можно пропустить)", reply_markup=nav_keyboard())
+    await message.answer("Тест: введите любую аудиторию (или 'пропустить').")
 
 @dp.message(TZStates.audience)
-async def tz_audience(message: types.Message, state: FSMContext):
-    print(f"🔄 Шаг 3: {message.text[:50]}...")
-    if "пропустить" in message.text.lower():
-        await state.update_data(audience="")
-    else:
-        await state.update_data(audience=message.text)
+async def tz_audience_test(message: types.Message, state: FSMContext):
+    print(f"✅ Получена аудитория: {message.text}")
+    await state.update_data(audience=message.text)
     await state.set_state(TZStates.features)
-    await message.answer("Какие главные возможности должно иметь ваше решение? Напишите список через запятую.", reply_markup=nav_keyboard())
+    await message.answer("Тест: введите любые функции.")
 
 @dp.message(TZStates.features)
-async def tz_features(message: types.Message, state: FSMContext):
-    print(f"🔄 Шаг 4: {message.text[:50]}...")
-    if not message.text or not message.text.strip():
-        await message.answer("Пожалуйста, перечислите функции.")
-        return
+async def tz_features_test(message: types.Message, state: FSMContext):
+    print(f"✅ Получены функции: {message.text}")
     await state.update_data(features=message.text)
     await state.set_state(TZStates.competitors)
-    await message.answer("Есть ли у вас конкуренты? (можно пропустить)", reply_markup=nav_keyboard())
+    await message.answer("Тест: введите конкурентов (или 'пропустить').")
 
 @dp.message(TZStates.competitors)
-async def tz_competitors(message: types.Message, state: FSMContext):
-    print(f"🔄 Шаг 5: {message.text[:50]}...")
-    if "пропустить" in message.text.lower():
-        await state.update_data(competitors="")
-    else:
-        await state.update_data(competitors=message.text)
+async def tz_competitors_test(message: types.Message, state: FSMContext):
+    print(f"✅ Получены конкуренты: {message.text}")
+    await state.update_data(competitors=message.text)
     await state.set_state(TZStates.tech_limits)
-    await message.answer("Есть ли технические рамки? (можно пропустить)", reply_markup=nav_keyboard())
+    await message.answer("Тест: введите тех. ограничения (или 'пропустить').")
 
 @dp.message(TZStates.tech_limits)
-async def tz_tech_limits(message: types.Message, state: FSMContext):
-    print(f"🔄 Шаг 6: {message.text[:50]}...")
-    if "пропустить" in message.text.lower():
-        await state.update_data(tech_limits="")
-    else:
-        await state.update_data(tech_limits=message.text)
+async def tz_tech_limits_test(message: types.Message, state: FSMContext):
+    print(f"✅ Получены тех. ограничения: {message.text}")
+    await state.update_data(tech_limits=message.text)
     await state.set_state(TZStates.deadline)
-    await message.answer("Когда вы хотите получить готовый результат? (можно пропустить)", reply_markup=nav_keyboard())
+    await message.answer("Тест: введите сроки (или 'пропустить').")
 
 @dp.message(TZStates.deadline)
-async def tz_deadline(message: types.Message, state: FSMContext):
-    print(f"🔄 Шаг 7: {message.text[:50]}...")
-    if "пропустить" in message.text.lower():
-        await state.update_data(deadline="")
-    else:
-        await state.update_data(deadline=message.text)
+async def tz_deadline_test(message: types.Message, state: FSMContext):
+    print(f"✅ Получены сроки: {message.text}")
+    await state.update_data(deadline=message.text)
     await state.set_state(TZStates.budget)
-    await message.answer("Есть ли у вас бюджет на этот проект? Если да, укажите сумму. Если нет, напишите 'нет' или выберите 'Пропустить'.", reply_markup=nav_keyboard())
+    await message.answer("Тест: введите бюджет (или 'пропустить').")
 
 @dp.message(TZStates.budget)
-async def tz_budget(message: types.Message, state: FSMContext):
-    print(f"🔄 Шаг 8: {message.text[:50]}...")
-    text = message.text.lower().strip()
-    if "пропустить" in text:
-        await state.update_data(budget="")
-        await state.set_state(TZStates.files)
-        await message.answer("Приложите дополнительные материалы (макеты, референсы). Пока можно только пропустить.", reply_markup=nav_keyboard())
-        return
-    if text in ["нет", "нисколько", "0", "без бюджета", "не готов", "не знаю", "нет бюджета"]:
-        await state.update_data(budget="0 (не указан)")
-        await state.set_state(TZStates.files)
-        await message.answer("Приложите дополнительные материалы (макеты, референсы). Пока можно только пропустить.", reply_markup=nav_keyboard())
-        return
-    try:
-        digits = re.sub(r'[^0-9]', '', text)
-        if digits:
-            budget = int(digits)
-            await state.update_data(budget=f"{budget} руб.")
-        else:
-            await state.update_data(budget=text)
-    except:
-        await state.update_data(budget=text)
+async def tz_budget_test(message: types.Message, state: FSMContext):
+    print(f"✅ Получен бюджет: {message.text}")
+    await state.update_data(budget=message.text)
     await state.set_state(TZStates.files)
-    await message.answer("Приложите дополнительные материалы (макеты, референсы). Пока можно только пропустить.", reply_markup=nav_keyboard())
+    await message.answer("Тест: введите 'пропустить' для завершения.")
 
 @dp.message(TZStates.files)
-async def tz_files(message: types.Message, state: FSMContext):
-    print(f"🔄 Шаг 9 (финал): получен файл или пропуск")
-    if message.document:
-        file_id = message.document.file_id
-        file_name = f"{datetime.datetime.now().timestamp()}_{message.document.file_name}"
-        file_data = await bot.download_file(file_id, destination=None)
-        file_url = upload_to_yandex(file_data, file_name)
-        if file_url:
-            await state.update_data(file_url=file_url)
-            await state.update_data(file_name=file_name)
-        else:
-            await message.answer("Не удалось сохранить файл. Вы можете пропустить этот шаг.")
-            return
-    elif "пропустить" in message.text.lower():
-        await state.update_data(file_url=None)
-        await state.update_data(file_name=None)
-    else:
-        await message.answer("Пожалуйста, загрузите файл или нажмите 'Пропустить'.", reply_markup=nav_keyboard())
-        return
-
-    data = await state.get_data()
-    prompt = "Ты — эксперт по разработке ТЗ. На основе данных сгенерируй структурированное ТЗ в формате JSON."
-    doc = generate_document(prompt, data)
-    if doc and "⚠️" not in doc and "❌" not in doc:
-        await message.answer(f"📄 Сгенерированный черновик ТЗ:\n\n{doc}")
-        for admin_id in ADMIN_IDS:
-            try:
-                await bot.send_message(
-                    admin_id,
-                    f"📄 Черновик ТЗ от @{message.from_user.username} (ID: {message.from_user.id}):\n\n{doc}"
-                )
-            except Exception as e:
-                print(f"Не удалось отправить черновик админу {admin_id}: {e}")
-    else:
-        await message.answer("⚠️ Не удалось сгенерировать черновик. Пожалуйста, обратитесь к менеджеру.")
-
-    fields = {
-        "name": "Название",
-        "essence": "Суть проекта",
-        "audience": "Клиенты",
-        "features": "Функции",
-        "competitors": "Конкуренты",
-        "tech_limits": "Тех. рамки",
-        "deadline": "Срок",
-        "budget": "Бюджет",
-        "file_url": "Ссылка на файл"
-    }
-    await finalize_order(message, state, "Техническое задание", fields)
+async def tz_files_test(message: types.Message, state: FSMContext):
+    print(f"✅ Финал: {message.text}")
+    await message.answer("✅ Тест пройден! Все шаги работают.")
+    await state.clear()
 
 # ===================== ЗАПУСК БОТА =====================
 async def main():
