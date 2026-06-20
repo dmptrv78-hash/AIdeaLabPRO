@@ -575,7 +575,7 @@ async def tz_files(message: types.Message, state: FSMContext):
     )
 
 # ===================== НАСТРОЙКА ВЕБХУКОВ =====================
-async def on_startup():
+async def on_startup(app: web.Application):
     """Действия при запуске"""
     logger.info("🚀 Запуск бота...")
     await init_db()
@@ -597,7 +597,7 @@ async def on_startup():
             f"Вебхук: {WEBHOOK_URL}"
         )
 
-async def on_shutdown():
+async def on_shutdown(app: web.Application):
     """Действия при остановке"""
     logger.info("👋 Остановка бота...")
     await bot.delete_webhook()
