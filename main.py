@@ -26,7 +26,7 @@ from aiogram.types import (
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 from aiohttp import web
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Boolean, select, func
+from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Boolean, select, func, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 
@@ -42,7 +42,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ===================== КОНФИГУРАЦИЯ =====================
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8802501314:AAG0L8mrwSTNUqhrsHWIWGarw8QlZgtJXGQ")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8802501314:AAF9A_YwSvQ4eghkimyrosXg1U0jfc79jCI")
 ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "1636715304").split(',')))
 MANAGER_EMAIL = "dmptrv78@gmail.com"
 
@@ -107,6 +107,33 @@ async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     logger.info("✅ База данных инициализирована")
+
+async def migrate_db():
+    """Добавляет недостающие колонки в базу данных"""
+    async with engine.begin() as conn:
+        # Добавляем колонку email
+        try:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN email TEXT"))
+            logger.info("✅ Колонка email добавлена")
+        except Exception as e:
+            if "duplicate column name" not in str(e).lower():
+                logger.warning(f"Ошибка добавления email: {e}")
+
+        # Добавляем колонку consent_given
+        try:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN consent_given BOOLEAN DEFAULT 0"))
+            logger.info("✅ Колонка consent_given добавлена")
+        except Exception as e:
+            if "duplicate column name" not in str(e).lower():
+                logger.warning(f"Ошибка добавления consent_given: {e}")
+
+        # Добавляем колонку last_activity
+        try:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN last_activity DATETIME"))
+            logger.info("✅ Колонка last_activity добавлена")
+        except Exception as e:
+            if "duplicate column name" not in str(e).lower():
+                logger.warning(f"Ошибка добавления last_activity: {e}")
 
 async def get_or_create_user(telegram_id, username=None, full_name=None):
     async with AsyncSessionLocal() as session:
@@ -579,6 +606,7 @@ async def on_startup(app: web.Application):
     """Действия при запуске"""
     logger.info("🚀 Запуск бота...")
     await init_db()
+    await migrate_db()  # <-- ДОБАВЛЯЕМ МИГРАЦИЮ!
     
     # Установка вебхука
     await bot.set_webhook(
