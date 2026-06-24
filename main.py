@@ -42,7 +42,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ===================== КОНФИГУРАЦИЯ =====================
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8802501314:AAF9A_YwSvQ4eghkimyrosXg1U0jfc79jCI")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8802501314:AAG0L8mrwSTNUqhrsHWIWGarw8QlZgtJXGQ")
 ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "1636715304").split(',')))
 MANAGER_EMAIL = "dmptrv78@gmail.com"
 
@@ -606,7 +606,7 @@ async def on_startup(app: web.Application):
     """Действия при запуске"""
     logger.info("🚀 Запуск бота...")
     await init_db()
-    await migrate_db()  # <-- ДОБАВЛЯЕМ МИГРАЦИЮ!
+    await migrate_db()
     
     # Установка вебхука
     await bot.set_webhook(
@@ -635,6 +635,13 @@ async def on_shutdown(app: web.Application):
 def create_app():
     """Создание aiohttp приложения"""
     app = web.Application()
+    
+    # Добавляем health check endpoints
+    async def health_check(request):
+        return web.Response(text="OK", status=200)
+    
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
     
     # Настройка обработчика вебхуков
     webhook_requests_handler = SimpleRequestHandler(
