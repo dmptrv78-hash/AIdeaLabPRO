@@ -217,7 +217,6 @@ class TZStates(StatesGroup):
     budget = State()
     files = State()
 
-# ===== СОСТОЯНИЯ ДЛЯ ТЭО =====
 class TEOStates(StatesGroup):
     goal = State()
     resources = State()
@@ -228,7 +227,6 @@ class TEOStates(StatesGroup):
     horizon = State()
     files = State()
 
-# ===== СОСТОЯНИЯ ДЛЯ ФИНМОДЕЛИ =====
 class FMStates(StatesGroup):
     income = State()
     costs = State()
@@ -238,7 +236,6 @@ class FMStates(StatesGroup):
     data = State()
     horizon = State()
 
-# ===== СОСТОЯНИЯ ДЛЯ БИЗНЕС-ПЛАНА =====
 class BPStates(StatesGroup):
     summary = State()
     product = State()
@@ -774,4 +771,634 @@ async def teo_goal(message: types.Message, state: FSMContext):
 @dp.message(TEOStates.resources)
 async def teo_resources(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
-    text = message.text.strip()
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(TEOStates.goal)
+        await safe_send_message(user_id, "🔙 Вернулись. Опишите цель:", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(resources="")
+    else:
+        await state.update_data(resources=text)
+    await state.set_state(TEOStates.risks)
+    await safe_send_message(
+        user_id,
+        "📊 **Шаг 3 из 8: Риски**\n\nКакие риски вы видите? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(TEOStates.risks)
+async def teo_risks(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(TEOStates.resources)
+        await safe_send_message(user_id, "🔙 Вернулись. Какие ресурсы нужны?", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(risks="")
+    else:
+        await state.update_data(risks=text)
+    await state.set_state(TEOStates.norms)
+    await safe_send_message(
+        user_id,
+        "📊 **Шаг 4 из 8: Нормативная база**\n\nЕсть ли нормативные требования? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(TEOStates.norms)
+async def teo_norms(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(TEOStates.risks)
+        await safe_send_message(user_id, "🔙 Вернулись. Какие риски?", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(norms="")
+    else:
+        await state.update_data(norms=text)
+    await state.set_state(TEOStates.effect)
+    await safe_send_message(
+        user_id,
+        "📊 **Шаг 5 из 8: Эффект**\n\nКакой экономический эффект ожидаете? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(TEOStates.effect)
+async def teo_effect(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(TEOStates.norms)
+        await safe_send_message(user_id, "🔙 Вернулись. Нормативные требования?", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(effect="")
+    else:
+        await state.update_data(effect=text)
+    await state.set_state(TEOStates.data)
+    await safe_send_message(
+        user_id,
+        "📊 **Шаг 6 из 8: Данные**\n\nКакие исходные данные у вас есть? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(TEOStates.data)
+async def teo_data(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(TEOStates.effect)
+        await safe_send_message(user_id, "🔙 Вернулись. Какой эффект?", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(data="")
+    else:
+        await state.update_data(data=text)
+    await state.set_state(TEOStates.horizon)
+    await safe_send_message(
+        user_id,
+        "📊 **Шаг 7 из 8: Горизонт планирования**\n\nНа какой срок планируете? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(TEOStates.horizon)
+async def teo_horizon(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(TEOStates.data)
+        await safe_send_message(user_id, "🔙 Вернулись. Какие данные?", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(horizon="")
+    else:
+        await state.update_data(horizon=text)
+    await state.set_state(TEOStates.files)
+    await safe_send_message(
+        user_id,
+        "📊 **Шаг 8 из 8: Файлы**\n\nПриложите файлы или нажмите «Пропустить».",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(TEOStates.files)
+async def teo_files(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(TEOStates.horizon)
+        await safe_send_message(user_id, "🔙 Вернулись. Горизонт планирования?", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(file_url=None)
+    elif message.document:
+        await state.update_data(file_url="file_uploaded")
+        await state.update_data(file_name=message.document.file_name)
+        await safe_send_message(user_id, "✅ Файл загружен!")
+    else:
+        await safe_send_message(
+            user_id,
+            "❌ Загрузите файл или нажмите «Пропустить».",
+            reply_markup=nav_keyboard()
+        )
+        return
+    data = await state.get_data()
+    fields = {
+        "goal": "Цель ТЭО",
+        "resources": "Ресурсы",
+        "risks": "Риски",
+        "norms": "Нормативная база",
+        "effect": "Ожидаемый эффект",
+        "data": "Исходные данные",
+        "horizon": "Горизонт планирования",
+        "file_url": "Ссылка на файл"
+    }
+    await finalize_order(message, state, "ТЭО", fields)
+
+# ===================== ФИНАНСОВАЯ МОДЕЛЬ =====================
+@dp.message(lambda msg: msg.text == "💰 Финансовая модель")
+async def start_fm(message: types.Message, state: FSMContext):
+    await state.set_state(FMStates.income)
+    await safe_send_message(
+        message.from_user.id,
+        "💰 **Шаг 1 из 7: Доходы**\n\nКакие источники доходов у проекта?\n(можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(FMStates.income)
+async def fm_income(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(income="")
+    else:
+        await state.update_data(income=text)
+    await state.set_state(FMStates.costs)
+    await safe_send_message(
+        user_id,
+        "💰 **Шаг 2 из 7: Расходы**\n\nКакие расходы вы ожидаете? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(FMStates.costs)
+async def fm_costs(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(FMStates.income)
+        await safe_send_message(user_id, "🔙 Вернулись. Какие доходы?", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(costs="")
+    else:
+        await state.update_data(costs=text)
+    await state.set_state(FMStates.investment)
+    await safe_send_message(
+        user_id,
+        "💰 **Шаг 3 из 7: Инвестиции**\n\nКакой объем инвестиций требуется? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(FMStates.investment)
+async def fm_investment(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(FMStates.costs)
+        await safe_send_message(user_id, "🔙 Вернулись. Какие расходы?", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(investment="")
+    else:
+        await state.update_data(investment=text)
+    await state.set_state(FMStates.breakeven)
+    await safe_send_message(
+        user_id,
+        "💰 **Шаг 4 из 7: Точка безубыточности**\n\nКогда планируете выйти на безубыточность? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(FMStates.breakeven)
+async def fm_breakeven(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(FMStates.investment)
+        await safe_send_message(user_id, "🔙 Вернулись. Объем инвестиций?", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(breakeven="")
+    else:
+        await state.update_data(breakeven=text)
+    await state.set_state(FMStates.metrics)
+    await safe_send_message(
+        user_id,
+        "💰 **Шаг 5 из 7: Ключевые метрики**\n\nКакие метрики важны? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(FMStates.metrics)
+async def fm_metrics(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(FMStates.breakeven)
+        await safe_send_message(user_id, "🔙 Вернулись. Точка безубыточности?", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(metrics="")
+    else:
+        await state.update_data(metrics=text)
+    await state.set_state(FMStates.data)
+    await safe_send_message(
+        user_id,
+        "💰 **Шаг 6 из 7: Данные для модели**\n\nКакие данные есть для расчетов? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(FMStates.data)
+async def fm_data(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(FMStates.metrics)
+        await safe_send_message(user_id, "🔙 Вернулись. Какие метрики?", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(data="")
+    else:
+        await state.update_data(data=text)
+    await state.set_state(FMStates.horizon)
+    await safe_send_message(
+        user_id,
+        "💰 **Шаг 7 из 7: Горизонт модели**\n\nНа какой срок строить модель? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(FMStates.horizon)
+async def fm_horizon(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(FMStates.data)
+        await safe_send_message(user_id, "🔙 Вернулись. Какие данные?", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(horizon="")
+    else:
+        await state.update_data(horizon=text)
+    
+    data = await state.get_data()
+    fields = {
+        "income": "Доходы",
+        "costs": "Расходы",
+        "investment": "Инвестиции",
+        "breakeven": "Точка безубыточности",
+        "metrics": "Ключевые метрики",
+        "data": "Данные для модели",
+        "horizon": "Горизонт модели"
+    }
+    await finalize_order(message, state, "Финансовая модель", fields)
+
+# ===================== БИЗНЕС-ПЛАН =====================
+@dp.message(lambda msg: msg.text == "📈 Бизнес-план")
+async def start_bp(message: types.Message, state: FSMContext):
+    await state.set_state(BPStates.summary)
+    await safe_send_message(
+        message.from_user.id,
+        "📈 **Шаг 1 из 10: Резюме**\n\nКраткое описание бизнес-идеи (2-3 предложения)",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(BPStates.summary)
+async def bp_summary(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if not text or len(text) < 5:
+        await safe_send_message(user_id, "❌ Опишите резюме подробнее (минимум 5 символов)", reply_markup=nav_keyboard())
+        return
+    await state.update_data(summary=text)
+    await state.set_state(BPStates.product)
+    await safe_send_message(
+        user_id,
+        "📈 **Шаг 2 из 10: Продукт**\n\nЧто вы предлагаете? Опишите продукт или услугу.",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(BPStates.product)
+async def bp_product(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(BPStates.summary)
+        await safe_send_message(user_id, "🔙 Вернулись. Резюме:", reply_markup=nav_keyboard())
+        return
+    if not text or len(text) < 5:
+        await safe_send_message(user_id, "❌ Опишите продукт подробнее (минимум 5 символов)", reply_markup=nav_keyboard())
+        return
+    await state.update_data(product=text)
+    await state.set_state(BPStates.competitors)
+    await safe_send_message(
+        user_id,
+        "📈 **Шаг 3 из 10: Конкуренты**\n\nКто ваши конкуренты? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(BPStates.competitors)
+async def bp_competitors(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(BPStates.product)
+        await safe_send_message(user_id, "🔙 Вернулись. Опишите продукт:", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(competitors="")
+    else:
+        await state.update_data(competitors=text)
+    await state.set_state(BPStates.marketing)
+    await safe_send_message(
+        user_id,
+        "📈 **Шаг 4 из 10: Маркетинг**\n\nКак вы планируете привлекать клиентов?",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(BPStates.marketing)
+async def bp_marketing(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(BPStates.competitors)
+        await safe_send_message(user_id, "🔙 Вернулись. Конкуренты:", reply_markup=nav_keyboard())
+        return
+    if not text or len(text) < 3:
+        await safe_send_message(user_id, "❌ Опишите маркетинговую стратегию (минимум 3 символа)", reply_markup=nav_keyboard())
+        return
+    await state.update_data(marketing=text)
+    await state.set_state(BPStates.team)
+    await safe_send_message(
+        user_id,
+        "📈 **Шаг 5 из 10: Команда**\n\nКто входит в команду проекта? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(BPStates.team)
+async def bp_team(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(BPStates.marketing)
+        await safe_send_message(user_id, "🔙 Вернулись. Маркетинг:", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(team="")
+    else:
+        await state.update_data(team=text)
+    await state.set_state(BPStates.sales)
+    await safe_send_message(
+        user_id,
+        "📈 **Шаг 6 из 10: Продажи**\n\nКакой канал продаж вы используете? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(BPStates.sales)
+async def bp_sales(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(BPStates.team)
+        await safe_send_message(user_id, "🔙 Вернулись. Команда:", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(sales="")
+    else:
+        await state.update_data(sales=text)
+    await state.set_state(BPStates.risks)
+    await safe_send_message(
+        user_id,
+        "📈 **Шаг 7 из 10: Риски**\n\nКакие риски вы видите? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(BPStates.risks)
+async def bp_risks(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(BPStates.sales)
+        await safe_send_message(user_id, "🔙 Вернулись. Продажи:", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(risks="")
+    else:
+        await state.update_data(risks=text)
+    await state.set_state(BPStates.capital)
+    await safe_send_message(
+        user_id,
+        "📈 **Шаг 8 из 10: Капитал**\n\nКакой начальный капитал требуется? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(BPStates.capital)
+async def bp_capital(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(BPStates.risks)
+        await safe_send_message(user_id, "🔙 Вернулись. Риски:", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(capital="")
+    else:
+        await state.update_data(capital=text)
+    await state.set_state(BPStates.finance_file)
+    await safe_send_message(
+        user_id,
+        "📈 **Шаг 9 из 10: Финансы**\n\nЕсть ли финансовые расчеты или файлы? (можно пропустить)",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(BPStates.finance_file)
+async def bp_finance_file(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(BPStates.capital)
+        await safe_send_message(user_id, "🔙 Вернулись. Капитал:", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(finance_file="")
+    else:
+        await state.update_data(finance_file=text)
+    await state.set_state(BPStates.files)
+    await safe_send_message(
+        user_id,
+        "📈 **Шаг 10 из 10: Файлы**\n\nПриложите файлы или нажмите «Пропустить».",
+        reply_markup=nav_keyboard()
+    )
+
+@dp.message(BPStates.files)
+async def bp_files(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+    if text == "🏠 Главное меню":
+        await clear_and_go_home(message, state)
+        return
+    if text == "🔙 Назад":
+        await state.set_state(BPStates.finance_file)
+        await safe_send_message(user_id, "🔙 Вернулись. Финансы:", reply_markup=nav_keyboard())
+        return
+    if text in ["⏭ Пропустить", "пропустить"]:
+        await state.update_data(file_url=None)
+    elif message.document:
+        await state.update_data(file_url="file_uploaded")
+        await state.update_data(file_name=message.document.file_name)
+        await safe_send_message(user_id, "✅ Файл загружен!")
+    else:
+        await safe_send_message(
+            user_id,
+            "❌ Загрузите файл или нажмите «Пропустить».",
+            reply_markup=nav_keyboard()
+        )
+        return
+    data = await state.get_data()
+    fields = {
+        "summary": "Резюме",
+        "product": "Продукт",
+        "competitors": "Конкуренты",
+        "marketing": "Маркетинг",
+        "team": "Команда",
+        "sales": "Продажи",
+        "risks": "Риски",
+        "capital": "Капитал",
+        "finance_file": "Финансовые расчеты",
+        "file_url": "Ссылка на файл"
+    }
+    await finalize_order(message, state, "Бизнес-план", fields)
+
+# ===================== НАСТРОЙКА ВЕБХУКОВ =====================
+async def on_startup(app: web.Application):
+    """Действия при запуске"""
+    logger.info("🚀 Запуск бота...")
+    await init_db()
+    await migrate_db()
+    
+    # Установка вебхука
+    await bot.set_webhook(
+        url=WEBHOOK_URL,
+        drop_pending_updates=True,
+        allowed_updates=dp.resolve_used_update_types()
+    )
+    logger.info(f"✅ Вебхук установлен: {WEBHOOK_URL}")
+    
+    # Уведомление админов
+    for admin_id in ADMIN_IDS:
+        await safe_send_message(
+            admin_id,
+            f"🤖 **Бот запущен!**\n"
+            f"Время: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"Вебхук: {WEBHOOK_URL}"
+        )
+
+async def on_shutdown(app: web.Application):
+    """Действия при остановке"""
+    logger.info("👋 Остановка бота...")
+    await bot.delete_webhook()
+    await bot.session.close()
+
+# ===================== ЗАПУСК =====================
+def create_app():
+    """Создание aiohttp приложения"""
+    app = web.Application()
+    
+    # Настройка обработчика вебхуков
+    webhook_requests_handler = SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot,
+        secret_token=os.getenv("WEBHOOK_SECRET", ""),
+    )
+    webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+    
+    # Setup application
+    setup_application(app, dp, bot=bot)
+    
+    # Обработчики событий
+    app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
+    
+    return app
+
+if __name__ == "__main__":
+    logger.info(f"🚀 Запуск сервера на порту {PORT}")
+    app = create_app()
+    web.run_app(app, host="0.0.0.0", port=PORT)
